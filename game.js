@@ -1,12 +1,21 @@
-import contract from './game.contract.json' with { type: 'json' };
+﻿import contract from './game.contract.json' with { type: 'json' };
+import { maps, groundBelow } from './maps.js';
+import { blinkPlayer, movePlayer, onGround } from './movement.js';
+import { initEnemies, updateRefuges, pulseEnemies, moveEnemies, contactEnemies, spawnEnemies, stunShade } from './enemies.js';
 
 export const tuning = contract.tuning;
 export const HZ = 60;
-export const ISLAND_RADIUS = 34;
-export const idleInput = { move: [0, 0], cam_yaw_deg: 0, jump: false, interact: false, pulse: false };
+export const ISLAND_RADIUS = maps[1].circles[0].r;
+export const idleInput = { move: [0, 0], cam_yaw_deg: 0, aim_deg: 0,
+  jump: false, interact: false, pulse: false, blink: false, beam: false, dash: false, pause: false };
 
+const t = tuning;
+const EPSILON = 1e-8;
 const distance = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
-const inside = (pos, lamp) => distance(pos, lamp.pos) < tuning.safe_radius;
+const rounded = pos => pos.map(value => Number(value.toFixed(3)) || 0);
+const radians = degrees => (degrees % 360) * Math.PI / 180;
+const remaining = (deadline, tick) => Math.max(0, deadline - tick) / HZ;
+const canPick = (a, b) => distance(a, b) <= t.pickup_radius + EPSILON && Math.abs(a[1] - b[1]) <= t.pickup_height + EPSILON;
 
 function seededRandom(seed) {
   let state = seed >>> 0;
@@ -16,55 +25,97 @@ function seededRandom(seed) {
   };
 }
 
-export function createGame(seed, scenario = {}) {
-  const random = seededRandom(seed);
-  const lamps = new Map((scenario.lanterns ?? []).map(lamp => [lamp.id, lamp]));
-  const lanterns = Array.from({ length: tuning.lantern_count_night1 }, (_, i) => {
-    const id = `L${i + 1}`;
-    const angle = i * 2 * Math.PI / tuning.lantern_count_night1 - Math.PI / 2;
-    const override = lamps.get(id) ?? {};
-    const lit = override.lit ?? (override.deposited === tuning.lantern_cost);
-    return { id, pos: override.pos ?? [20 * Math.cos(angle), 0, 20 * Math.sin(angle)],
-      lit, deposited: override.deposited ?? (lit ? tuning.lantern_cost : 0) };
-  });
-  const randomMotes = Array.from({ length: 54 }, (_, i) => {
-    const band = Math.floor(i / 18);
-    const angle = (i % 18 + random()) * 2 * Math.PI / 18;
-    const radius = 4 + band * 8 + random() * 6;
-    return [radius * Math.cos(angle), 0, radius * Math.sin(angle)];
-  });
-  const motes = (scenario.motes ?? (scenario.random_motes === false ? [] : randomMotes))
-    .map((pos, i) => ({ id: `M${i + 1}`, pos }));
-  const shadeEntries = scenario.shades ?? (scenario.random_shades === false ? [] :
-    [[-20, 1, 10], [20, 1, -10]].map(pos => ({ pos })));
-  const shadeIds = new Set(shadeEntries.map(shade => shade.id));
-  let nextShade = 0;
-  function addShade({ id, pos }) {
-    if (id === undefined) {
-      do { id = `S${++nextShade}`; } while (shadeIds.has(id));
-      shadeIds.add(id);
-    }
-    return { id, pos: [...pos], state: 'chase', stunnedUntil: 0 };
+function resetMotion(player, map) {
+  player.vel = [0, 0, 0];
+  player.runVel = [0, 0];
+  player.vy = 0;
+  player.launch = null;
+  player.dashUntil = 0;
+  player.dashDir = [0, 1];
+  player.facing = [0, 1];
+  player.grounded = onGround(map, player.pos);
+}
+
+function addMote(game, pos, dropped = false, slot = null) {
+  const { simTick: tick } = game;
+  game.motes.push({ id: `M${++game.nextMote}`, pos: [...pos], slot,
+    kind: dropped ? 'dropped' : 'random',
+    expiresAt: dropped ? tick + t.mote_drop_ttl_ticks : Infinity, collectAt: dropped ? tick + 1 : tick });
+}
+
+function spawnMote(game) {
+  if (game.motes.length >= t.mote_cap) return;
+  const occupied = new Set(game.motes.filter(mote => mote.slot !== null).map(mote => mote.slot));
+  const valid = game.map.motePoints.map((pos, slot) => ({ pos, slot }))
+    .filter(({ slot, pos }) => !occupied.has(slot) && !game.motes.some(mote =>
+      mote.slot === null && distance(mote.pos, pos) <= EPSILON && Math.abs(mote.pos[1] - pos[1]) <= EPSILON));
+  if (valid.length) {
+    const { pos, slot } = valid[Math.floor(game.random() * valid.length)];
+    addMote(game, pos, false, slot);
   }
-  const shades = shadeEntries.map(addShade);
+}
+
+function dropMotes(game, amount, pos, spread) {
+  const start = spread && amount ? game.random() * Math.PI * 2 : 0;
+  for (let i = 0; i < amount; i++) {
+    const angle = start + i * Math.PI * 2 / amount;
+    const radius = spread ? 1.5 + game.random() : 0;
+    const x = pos[0] + Math.cos(angle) * radius;
+    const z = pos[2] + Math.sin(angle) * radius;
+    const y = groundBelow(game.map, x, z, pos[1] + t.pickup_height) ?? pos[1];
+    addMote(game, [x, y, z], true);
+  }
+}
+
+export function createGame(seed, scenario = {}, night = 1) {
+  const map = maps[night];
+  if (!map) throw new Error(`Unknown night ${night}`);
+  const random = seededRandom(seed);
+  const overrides = new Map((scenario.lanterns ?? []).map(lamp => [lamp.id, lamp]));
+  const lanterns = map.lanternPositions.map((pos, i) => {
+    const id = `L${i + 1}`;
+    const override = overrides.get(id) ?? {};
+    const lit = override.lit ?? (override.deposited === t.lantern_cost);
+    return { id, pos: override.pos ?? pos, lit, deposited: override.deposited ?? (lit ? t.lantern_cost : 0) };
+  });
+  const oldPlayer = scenario.player ?? {};
   const player = {
-    pos: [...(scenario.player?.pos ?? [0, 0, 0])],
-    flames: scenario.player?.flames ?? tuning.flames,
-    carried: scenario.player?.carried ?? 0,
-    vy: 0, invulnerableUntil: 0,
+    pos: [...(oldPlayer.pos ?? map.spawn)],
+    flames: oldPlayer.flames ?? t.flames, carried: oldPlayer.carried ?? 0,
+    invulnerableUntil: oldPlayer.invuln_ticks ?? 0,
+    respawnAt: 0, charmUntil: oldPlayer.charm_ticks ?? 0,
   };
-  const startTime = scenario.time_left_s ?? tuning.night1_duration_s;
-  const spawnShades = scenario.random_shades ?? (scenario.shades === undefined);
-  return { tick: 0, score: 0, state: 'playing', player, lanterns, motes, shades, random, addShade,
-    startTime, timeLeft: startTime, spawnShades, pulseReadyAt: 0, previous: idleInput };
+  resetMotion(player, map);
+  const charmDefaults = map.charmPoints.map((pos, i) => ({ id: `C${i + 1}`, pos }));
+  const charms = (scenario.charms ?? charmDefaults).map((charm, i) => {
+    const id = charm.id ?? `C${i + 1}`;
+    return { id, pos: charm.pos ?? charmDefaults.find(item => item.id === id)?.pos ?? map.spawn,
+      available: charm.available ?? !(charm.respawn_ticks > 0),
+      respawnAt: charm.respawn_ticks ?? (charm.available === false ? t.charm_respawn_ticks : 0) };
+  });
+  const startTime = scenario.time_left_s ?? t[`night${night}_duration_s`];
+  const game = { tick: 0, simTick: 0, night, map, score: 0, state: 'playing', player, lanterns, motes: [], charms,
+    nextMote: 0, random, randomMotes: scenario.random_motes ?? true,
+    wind: { active: false, warning: false, dir_deg: null, pendingDirection: null },
+    windEnabled: night === 3 && (scenario.wind_enabled ?? true),
+    startTime, timeLeft: startTime, pulseReadyAt: oldPlayer.pulse_cd_ticks ?? 0,
+    dashReadyAt: oldPlayer.dash_cd_ticks ?? 0, blinkReadyAt: 0, beamReadyAt: 0, previous: idleInput };
+  game.dropMotes = (amount, pos, spread) => dropMotes(game, amount, pos, spread);
+  if (scenario.motes) {
+    for (const pos of scenario.motes) addMote(game, pos);
+  } else if (game.randomMotes) {
+    for (let i = 0; i < t.mote_initial; i++) spawnMote(game);
+  }
+  initEnemies(game, scenario);
+  return game;
 }
 
 export function nearbyLantern(game) {
   let nearest;
-  let range = tuning.interact_radius;
+  let range = t.interact_radius + EPSILON;
   for (const lamp of game.lanterns) {
     const gap = distance(game.player.pos, lamp.pos);
-    if (!lamp.lit && gap <= range && (!nearest || gap < range)) {
+    if (!lamp.lit && gap <= range && (!nearest || gap < range - EPSILON)) {
       nearest = lamp;
       range = gap;
     }
@@ -72,147 +123,188 @@ export function nearbyLantern(game) {
   return nearest;
 }
 
-function movePlayer(player, input, jump) {
-  const [x, z] = input.move;
-  const angle = (input.cam_yaw_deg % 360) * Math.PI / 180;
-  const step = tuning.player_speed / HZ / Math.max(1, Math.hypot(x, z));
-  const nextX = player.pos[0] + (x * Math.cos(angle) + z * Math.sin(angle)) * step;
-  const nextZ = player.pos[2] + (-x * Math.sin(angle) + z * Math.cos(angle)) * step;
-  const boundary = Math.max(ISLAND_RADIUS, distance(player.pos, [0, 0, 0]));
-  const scale = Math.max(1, Math.hypot(nextX, nextZ) / boundary);
-  if (jump && player.pos[1] === 0) player.vy = 5;
-  if (player.pos[1] > 0 || player.vy > 0) player.vy -= 20 / HZ;
-  const y = Math.max(0, player.pos[1] + player.vy / HZ);
-  if (y === 0) player.vy = 0;
-  player.pos = [nextX / scale, y, nextZ / scale];
+function aimDegrees(point, [x, , z], fallback = 0) {
+  if (!point) return fallback;
+  const dx = point.x - x;
+  const dz = point.z - z;
+  return dx || dz ? Math.atan2(dx, dz) * 180 / Math.PI : fallback;
 }
 
-function moveShade(shade, target, litLamps, tick) {
-  if (tick < shade.stunnedUntil) return;
-  shade.state = 'chase';
-  const [x, y, z] = shade.pos;
-  const refuge = litLamps.find(lamp => inside(shade.pos, lamp));
-  const dx = refuge ? x - refuge.pos[0] : target[0] - x;
-  const dz = refuge ? z - refuge.pos[2] : target[2] - z;
-  const gap = Math.hypot(dx, dz);
-  const step = tuning.shade_speed / HZ;
-  const scale = Math.min(step / (gap || 1), 1);
-  let next = [x + (gap ? dx * scale : refuge ? step : 0), y, z + dz * scale];
-  if (!refuge) {
-    const blocked = litLamps.find(lamp => inside(next, lamp));
-    if (blocked) {
-      const offset = distance(next, blocked.pos) || 1;
-      const [lx, , lz] = blocked.pos;
-      next = [lx + (next[0] - lx) * tuning.safe_radius / offset, y,
-        lz + (next[2] - lz) * tuning.safe_radius / offset];
-    }
-    if (litLamps.some(lamp => distance(next, lamp.pos) < tuning.safe_radius - 1e-9)) return;
+function useExtraSkills(game, input, aimPoint, pressed, emit) {
+  const { player, simTick: tick } = game;
+  if (pressed('blink') && player.carried >= t.blink_cost && tick >= game.blinkReadyAt) {
+    const from = player.pos;
+    blinkPlayer(game.map, player, aimDegrees(aimPoint, from, input.aim_deg));
+    player.carried -= t.blink_cost;
+    game.blinkReadyAt = tick + Math.round(t.blink_cooldown_s * HZ);
+    emit('blink', { from: rounded(from), to: rounded(player.pos), carried: player.carried });
   }
-  shade.pos = next;
+  if (pressed('beam') && player.carried >= t.beam_cost && tick >= game.beamReadyAt) {
+    const aim = aimDegrees(aimPoint, player.pos, input.aim_deg);
+    const dx = Math.sin(radians(aim));
+    const dz = Math.cos(radians(aim));
+    const [x, , z] = player.pos;
+    const ids = [];
+    player.carried -= t.beam_cost;
+    game.beamReadyAt = tick + Math.round(t.beam_cooldown_s * HZ);
+    for (const shade of game.shades) {
+      if (shade.state === 'spawning' && tick < shade.stateUntil) continue;
+      const sx = shade.pos[0] - x;
+      const sz = shade.pos[2] - z;
+      const along = Math.max(0, Math.min(t.beam_range_m, sx * dx + sz * dz));
+      if (Math.hypot(sx - along * dx, sz - along * dz) <= t.beam_width_m / 2 + EPSILON) {
+        stunShade(game, shade, t.beam_stun_s);
+        ids.push(shade.id);
+      }
+    }
+    game.score += ids.length * t.score.per_stun;
+    emit('beam', { aim_deg: aim, stunned_ids: ids, carried: player.carried });
+  }
 }
 
-export function stepGame(game, input = idleInput, onEvent = () => {}) {
-  if (game.state !== 'playing') return;
-  const tick = ++game.tick;
-  const { player } = game;
-  const emit = (name, data) => onEvent({ type: 'event', tick, name, data });
-  const pressed = action => input[action] && !game.previous[action];
-  game.timeLeft = game.startTime - tick / HZ;
-  movePlayer(player, input, pressed('jump'));
+function updateWind(game) {
+  if (!game.windEnabled) return;
+  const { wind, simTick: tick } = game;
+  const cycle = tick % (30 * HZ);
+  wind.warning = cycle >= 28 * HZ;
+  if (cycle === 28 * HZ) wind.pendingDirection = game.random() * 360;
+  wind.active = tick >= 30 * HZ && cycle < 5 * HZ;
+  wind.dir_deg = wind.active ? wind.pendingDirection : null;
+}
 
+function collect(game, emit) {
+  const { player, simTick: tick } = game;
   game.motes = game.motes.filter(mote => {
-    if (player.carried >= tuning.carry_capacity || distance(player.pos, mote.pos) > tuning.pickup_radius) return true;
+    if (tick < mote.collectAt || player.carried >= t.carry_capacity || !canPick(player.pos, mote.pos)) return true;
     player.carried += 1;
-    game.score += tuning.score.per_mote;
     emit('mote_picked', { carried: player.carried });
     return false;
   });
+  for (const charm of game.charms) {
+    if (charm.available && canPick(player.pos, charm.pos)) {
+      charm.available = false;
+      charm.respawnAt = tick + t.charm_respawn_ticks;
+      player.charmUntil = tick + t.charm_duration_ticks;
+      emit('charm_picked', { charm_id: charm.id, charm_ticks: t.charm_duration_ticks });
+    }
+  }
+}
 
-  const lamp = pressed('interact') && player.carried > 0 && nearbyLantern(game);
-  if (lamp) {
-    const amount = Math.min(player.carried, tuning.lantern_cost - lamp.deposited);
-    player.carried -= amount;
-    lamp.deposited += amount;
-    if (amount > 0) emit('deposit', { lantern_id: lamp.id, amount, deposited: lamp.deposited });
-    if (lamp.deposited === tuning.lantern_cost) {
-      lamp.lit = true;
-      game.score += tuning.score.per_lantern;
-      emit('lantern_lit', { lantern_id: lamp.id });
+function deposit(game, emit) {
+  const { player } = game;
+  const lamp = player.carried > 0 && nearbyLantern(game);
+  if (!lamp) return;
+  const amount = Math.min(player.carried, t.lantern_cost - lamp.deposited);
+  player.carried -= amount;
+  lamp.deposited += amount;
+  game.score += amount * t.score.per_mote;
+  if (amount > 0) emit('deposit', { lantern_id: lamp.id, amount, deposited: lamp.deposited });
+  if (lamp.deposited === t.lantern_cost) {
+    lamp.lit = true;
+    game.score += t.score.per_lantern;
+    emit('lantern_lit', { lantern_id: lamp.id });
+  }
+}
+
+export function stepGame(game, input = idleInput, onEvent = () => {}, aimPoint) {
+  if (game.state !== 'playing' && game.state !== 'paused') return;
+  const tick = ++game.tick;
+  const previous = game.previous;
+  const pressed = action => input[action] && !previous[action];
+  const emit = (name, data) => onEvent({ type: 'event', tick, name, data });
+  game.previous = input;
+  if (pressed('pause')) {
+    const paused = game.state === 'playing';
+    game.state = paused ? 'paused' : 'playing';
+    emit(paused ? 'paused' : 'resumed', {});
+  }
+  if (game.state === 'paused') return;
+
+  const sim = ++game.simTick;
+  const { player, map } = game;
+  if (sim === 1) emit('night_start', { night: game.night });
+  game.timeLeft = game.startTime - sim / HZ;
+  game.motes = game.motes.filter(mote => sim < mote.expiresAt);
+  for (const charm of game.charms) {
+    if (!charm.available && sim >= charm.respawnAt) charm.available = true;
+  }
+  updateWind(game);
+
+  const waiting = Boolean(player.respawnAt);
+  if (waiting && sim >= player.respawnAt) {
+    player.pos = [...map.spawn];
+    player.respawnAt = 0;
+    player.invulnerableUntil = sim + Math.round(t.invuln_s * HZ);
+    resetMotion(player, map);
+  } else if (!waiting && player.flames > 0) {
+    movePlayer(game, input, pressed, emit);
+    if (t.fall_enabled && player.pos[1] < t.fall_y) {
+      const lost = player.carried;
+      player.flames -= 1;
+      player.carried = 0;
+      player.respawnAt = sim + t.fall_respawn_ticks;
+      resetMotion(player, map);
+      emit('player_hit', { by: 'fall', flames: player.flames, dropped: 0, lost });
+    } else {
+      useExtraSkills(game, input, aimPoint, pressed, emit);
+      collect(game, emit);
+      if (pressed('interact')) deposit(game, emit);
     }
   }
 
-  const litLamps = game.lanterns.filter(item => item.lit);
-  if (pressed('pulse') && player.carried >= tuning.pulse_cost && tick >= game.pulseReadyAt) {
-    player.carried -= tuning.pulse_cost;
-    game.pulseReadyAt = tick + Math.round(tuning.pulse_cooldown_s * HZ);
-    const stunned_ids = [];
-    for (const shade of game.shades) {
-      const gap = distance(player.pos, shade.pos);
-      if (gap > tuning.pulse_radius) continue;
-      const pushX = gap ? (shade.pos[0] - player.pos[0]) / gap : 1;
-      const pushZ = gap ? (shade.pos[2] - player.pos[2]) / gap : 0;
-      let pushDistance = tuning.pulse_push_m;
-      for (const refuge of litLamps) {
-        const x = shade.pos[0] - refuge.pos[0];
-        const z = shade.pos[2] - refuge.pos[2];
-        const alignment = x * pushX + z * pushZ;
-        const outside = x * x + z * z - tuning.safe_radius ** 2;
-        const crossing = alignment ** 2 - outside;
-        if (outside >= -1e-9 && alignment < 0 && crossing > 0) {
-          pushDistance = Math.min(pushDistance, Math.max(0, -alignment - Math.sqrt(crossing)));
-        }
-      }
-      shade.pos[0] += pushX * pushDistance;
-      shade.pos[2] += pushZ * pushDistance;
-      shade.stunnedUntil = tick + Math.round(tuning.pulse_stun_s * HZ);
-      shade.state = 'stunned';
-      stunned_ids.push(shade.id);
-      game.score += tuning.score.per_stun;
-    }
+  updateRefuges(game);
+  if (!waiting && !player.respawnAt && player.flames > 0 && pressed('pulse') &&
+      player.carried >= t.pulse_cost && sim >= game.pulseReadyAt) {
+    player.carried -= t.pulse_cost;
+    game.pulseReadyAt = sim + Math.round(t.pulse_cooldown_s * HZ);
+    const stunned_ids = pulseEnemies(game, emit);
+    game.score += stunned_ids.length * t.score.per_stun;
     emit('pulse', { stunned_ids });
   }
-
-  if (game.spawnShades && tick % (15 * HZ) === 0 && game.shades.length < 5) {
-    const angle = game.random() * Math.PI * 2;
-    const shade = game.addShade({ pos: [29 * Math.cos(angle), 1, 29 * Math.sin(angle)] });
-    game.shades.push(shade);
-    emit('shade_spawned', { id: shade.id });
-  }
-  const protectedByLamp = litLamps.some(item => distance(player.pos, item.pos) <= tuning.safe_radius);
-  for (const shade of game.shades) {
-    moveShade(shade, player.pos, litLamps, tick);
-    if (!protectedByLamp && player.flames > 0 && shade.state !== 'stunned' &&
-        tick >= player.invulnerableUntil && distance(player.pos, shade.pos) <= tuning.shade_hit_radius) {
+  moveEnemies(game);
+  if (!player.respawnAt && player.flames > 0) {
+    contactEnemies(game, emit, () => {
+      if (sim < player.invulnerableUntil) return false;
       player.flames -= 1;
-      const dropped = Math.floor(player.carried * tuning.hit_drop_ratio);
+      const dropped = Math.floor(player.carried * t.hit_drop_ratio);
       player.carried -= dropped;
-      player.invulnerableUntil = tick + Math.round(tuning.invuln_s * HZ);
+      player.invulnerableUntil = sim + Math.round(t.invuln_s * HZ);
+      game.dropMotes(dropped, player.pos, true);
       emit('player_hit', { by: 'shade', flames: player.flames, dropped });
-    }
+      return true;
+    });
   }
+  if (game.randomMotes && sim % t.mote_spawn_ticks === 0) spawnMote(game);
+  spawnEnemies(game, emit);
 
-  game.previous = input;
   let reason;
-  if (litLamps.length === game.lanterns.length) {
-    game.state = 'won';
-    reason = 'all_lit';
-    game.score += Math.floor(game.timeLeft) * tuning.score.per_second_left +
-      player.flames * tuning.score.per_flame_left;
-  } else if (player.flames === 0 || game.timeLeft <= 0) {
-    game.state = 'lost';
-    reason = player.flames === 0 ? 'no_flames' : 'dawn';
+  if (player.flames === 0) reason = 'no_flames';
+  else if (game.lanterns.every(lamp => lamp.lit)) reason = 'all_lit';
+  else if (game.timeLeft <= 0) reason = 'dawn';
+  if (reason) {
+    game.state = reason === 'all_lit' ? 'won' : 'lost';
+    if (game.state === 'won') {
+      game.score += Math.floor(Math.max(0, game.timeLeft)) * t.score.per_second_left + player.flames * t.score.per_flame_left;
+    }
+    emit('game_over', { result: game.state, reason });
   }
-  if (reason) emit('game_over', { result: game.state, reason });
 }
 
 export function snapshot(game) {
-  const rounded = pos => pos.map(value => Number(value.toFixed(3)));
-  const { tick, state, timeLeft, score, player, lanterns, shades, motes } = game;
+  const { tick, simTick, night, state, timeLeft, score, player, lanterns, shades, motes, drifters, charms, wind } = game;
   return {
-    type: 'snapshot', tick, sim_tick: tick, state, time_left_s: timeLeft, score,
-    player: { pos: rounded(player.pos), flames: player.flames, carried: player.carried },
+    type: 'snapshot', tick, sim_tick: simTick, night, state, time_left_s: timeLeft, score,
+    wind: { active: wind.active, dir_deg: wind.dir_deg },
+    player: { pos: rounded(player.pos), vel: rounded(player.vel), grounded: player.grounded,
+      flames: player.flames, carried: player.carried, invuln: remaining(player.invulnerableUntil, simTick),
+      dash_cd_s: simTick < player.charmUntil ? 0 : remaining(game.dashReadyAt, simTick),
+      pulse_cd_s: remaining(game.pulseReadyAt, simTick), charm_s: remaining(player.charmUntil, simTick) },
     lanterns: lanterns.map(lamp => ({ ...lamp, pos: rounded(lamp.pos) })),
     shades: shades.map(({ id, pos, state }) => ({ id, pos: rounded(pos), state })),
-    motes_active: motes.length, motes: motes.map(({ id, pos }) => ({ id, pos: rounded(pos) })),
+    motes_active: motes.length,
+    motes: motes.map(({ id, pos, kind, expiresAt }) => ({ id, pos: rounded(pos), kind,
+      ttl_s: kind === 'dropped' ? remaining(expiresAt, simTick) : null })),
+    drifters: drifters.map(({ id, pos, state, stolen }) => ({ id, pos: rounded(pos), state, stolen })),
+    charms: charms.map(({ id, available, respawnAt }) => ({ id, available, respawn_s: available ? 0 : remaining(respawnAt, simTick) })),
   };
 }

@@ -1,6 +1,6 @@
 # Day 12 — AI SDLC: Đảo Đèn Lồng
 
-## Chơi Đêm 1 – Đảo Bến
+## Chơi Ba hòn đảo
 
 Cần Node.js 20.18.3 trở lên và trình duyệt máy tính hỗ trợ WebGL 2.
 
@@ -9,24 +9,39 @@ npm ci
 npm start
 ```
 
-Mở http://127.0.0.1:3000. Nhấn phím điều khiển để bắt đầu đếm giờ. Dùng **WASD** hoặc **phím mũi tên** để di chuyển, **Space** để nhảy, **E** để nạp đom đóm vào đèn gần nhất và **Q** để tỏa sáng. Đi qua đom đóm để nhặt. Bản đồ ở góc trên bên phải đánh dấu đèn và vị trí của Mây.
+Mở http://127.0.0.1:3000, chọn **Bắt đầu** rồi **Vào Đêm**. Thắp đủ đèn để lần lượt đi qua **Đảo Bến**, **Đảo Cau** và **Đảo Chuông**. Thắng Đêm 3 sẽ mở màn **Bình Minh** và hiện tổng điểm. Có thể thử lại Đêm đang chơi. Cài đặt âm lượng và độ nhạy chuột được lưu trong trình duyệt.
 
-Mây có 3 sinh lực, mang tối đa 8 đom đóm, và cần nạp 4 đom đóm cho mỗi đèn. Tỏa sáng tốn 2 đom đóm, đẩy lùi và làm choáng Bóng Mực. Đứng gần đèn đã thắp sẽ tránh được Bóng Mực. Thắp hết 5 đèn để thắng. Hết sinh lực hoặc hết 150 giây thì thua. Dùng nút **Chơi lại** sau khi kết thúc.
+| Phím | Thao tác |
+| --- | --- |
+| **WASD** hoặc **mũi tên** | Di chuyển |
+| **Space** | Nhảy |
+| **Shift** | Lướt theo hướng đang đi hoặc hướng nhìn. Hồi 1,5 giây. |
+| **E** | Nạp đom đóm vào đèn chưa sáng gần nhất |
+| **Q** | Tốn 3 đom đóm để đẩy lùi và làm choáng Bóng Mực. Hồi 3 giây. |
+| **F** | Đưa chuột về hướng muốn dịch chuyển rồi nhấn F. Mây đi tối đa 5 m và tốn 1 đom đóm. Chiêu dừng trước mép vực hoặc vật cản. |
+| **R** | Đưa chuột tới nơi muốn ngắm trên đảo rồi nhấn R. Tốn 2 đom đóm để bắn chùm sáng dài 12 m, rộng 1,4 m, làm choáng Bóng Mực 1,5 giây. Hồi 1,2 giây. |
+| **Esc** hoặc **P** | Tạm dừng. Từ menu có thể tiếp tục, chơi lại Đêm, mở cài đặt hoặc về menu chính. |
 
-Mỗi lần nhặt được 10 điểm, mỗi đèn thắp được 100 điểm và mỗi Bóng Mực trúng tỏa sáng được 20 điểm. Khi thắng, cộng 2 điểm cho mỗi giây nguyên còn lại và 50 điểm cho mỗi sinh lực còn lại.
+Mây bắt đầu mỗi Đêm với 3 Ngọn Lửa và mang tối đa 10 đom đóm. Mỗi đèn cần 10 đom đóm và giữ phần đã nạp. Đèn sáng ngăn Bóng Mực. Gió Lạc có thể cướp ánh sáng ngay trong vùng an toàn. Ở Đêm 2 và 3, nhặt **Bùa Gió** để chạy nhanh hơn và lướt lại ngay khi lượt lướt kết thúc. Đi sát mép đảo có thể rơi và mất một Ngọn Lửa cùng toàn bộ ánh sáng đang mang.
 
-## Kiểm chứng Phase 1
+Có 5, 6 và 7 đèn ở ba Đêm, với thời lượng tương ứng 5:00, 5:30 và 6:00. Điểm được tính theo mỗi đom đóm nạp (+10), mỗi đèn sáng (+100) và mỗi Bóng Mực trúng Tỏa Sáng (+5). Kỹ năng R giữ điểm thưởng làm choáng (+5). Khi thắng một Đêm, cộng 2 điểm cho mỗi giây nguyên và 50 điểm cho mỗi Ngọn Lửa còn lại. Tổng điểm chỉ tính các Đêm đã thắng.
+
+## Kiểm chứng
 
 ```sh
 npm test
-node headless.js --seed 42 --night 1 --ticks 600 --out out.jsonl
+node headless.js --seed 42 --night 3 --ticks 600 --out out.jsonl
 ```
 
-CLI hỗ trợ `--scenario`, `--inputs` và `--snapshot-every` theo [PRD-0](PRD-0_Dao_Den_Long.md). Xem [ghi chép kiểm chứng](docs/proof/phase-1.md) và [harness cho agent](AGENTS.md).
+CLI hỗ trợ `--night 1|2|3`, `--scenario`, `--inputs` và `--snapshot-every` theo [Test Contract v1.1](PRD-1-Phase-2-Ba-hon-dao.md). Các input mở rộng `blink` và `beam` dùng `aim_deg` (0° là +Z và 90° là +X). Khi chuột chưa ngắm vào đảo, bản web dùng hướng nhìn của Mây.
+
+HUD ưu tiên Be Vietnam Pro và JetBrains Mono nếu máy có sẵn. Game dùng font dự phòng trên máy để chạy offline. Bảng màu giao diện lấy từ PRD-1. Cây, đá và mô hình 3D dùng thêm màu vật liệu để phân biệt địa hình.
+
+Xem [kiểm chứng và changelog Phase 2](docs/proof/phase-2.md), [bằng chứng Phase 1](docs/proof/phase-1.md) và [harness cho agent](AGENTS.md).
 
 ### Sáng tạo của tôi
 
-Bản đồ nhỏ đổi màu theo đèn đã thắp, giúp định hướng khi Mây chạy quanh đảo. Bản đồ đọc trạng thái có sẵn từ mô phỏng. Các bài kiểm tra headless chạy cùng mô phỏng mà không cần Three.js hay trình duyệt.
+Bản đồ nhỏ đổi màu theo các đèn đã thắp. Mây vẫn đội nón lá có đèn nhỏ, dịch chuyển bằng F và bắn chùm sáng bằng R theo hướng chuột. Hiệu ứng và âm báo chạy trong trình duyệt. Mô phỏng headless chỉ kích hoạt F/R khi input yêu cầu.
 
 ---
 

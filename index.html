@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="vi">
   <head>
     <meta charset="utf-8">
@@ -9,38 +9,85 @@
     <script type="importmap">{"imports":{"three":"/vendor/three.module.js"}}</script>
   </head>
   <body>
-    <canvas id="world" aria-label="Đảo Bến trong đêm"></canvas>
-    <header class="brand">
-      <p class="eyebrow">Đêm 1 <span>·</span> Đảo Bến</p>
-      <h1>Đảo Đèn Lồng</h1>
-      <p class="goal">Gom đom đóm, thắp sáng năm ngọn đèn.</p>
-    </header>
-    <section class="stats" aria-label="Trạng thái của Mây">
-      <div><span>Sinh lực</span><strong id="flames"></strong></div>
-      <div><span>Đom đóm</span><strong id="carried"></strong></div>
-      <div><span>Đèn đã thắp</span><strong id="lanterns"></strong></div>
-      <div><span>Còn lại</span><strong id="time"></strong></div>
-      <div><span>Điểm</span><strong id="score"></strong></div>
-    </section>
-    <aside class="map" aria-label="Bản đồ đèn lồng">
-      <p class="eyebrow">Bản đồ đảo</p>
-      <div class="map-disc" id="map"></div>
-      <p class="map-key">◆ Đèn <span>• Mây</span></p>
-    </aside>
-    <div class="bottom">
-      <p id="hint">Nhấn phím di chuyển để bắt đầu</p>
-      <div class="controls" aria-label="Điều khiển">
+    <canvas id="world" aria-label="Đảo Đèn Lồng"></canvas>
+    <p id="graphics-error" role="alert" hidden>Cần trình duyệt hỗ trợ WebGL 2 để chơi.</p>
+    <div id="hud" hidden>
+      <header class="brand">
+        <p class="eyebrow" id="night-label"></p>
+        <div class="flame-stat"><span>Ngọn Lửa</span> <strong id="flames"></strong></div>
+      </header>
+      <div class="clock" aria-label="Thời gian còn lại"><strong id="time"></strong></div>
+      <aside class="map" aria-label="Bản đồ đèn lồng">
+        <div class="stats"><span>Đèn <strong id="lanterns"></strong></span><span>Điểm <strong id="score"></strong></span></div>
+        <div class="map-disc" id="map"></div>
+        <p class="map-key">◆ Đèn <span>• Mây</span></p>
+      </aside>
+      <div id="lamp-arrow" hidden><i aria-hidden="true">➤</i><span></span></div>
+      <div class="bottom">
+        <p id="wind-warning" hidden></p>
+        <p id="hint" role="status"></p>
+        <p id="deposit-hint" hidden></p>
+        <div class="carry" aria-label="Đom đóm đang mang">
+          <div id="carry-slots" aria-hidden="true"></div>
+          <strong id="carried"></strong>
+          <strong id="charm-status" hidden></strong>
+        </div>
+      </div>
+      <div class="controls movement" aria-label="Điều khiển">
         <span><kbd>W A S D</kbd> Di chuyển</span>
         <span><kbd>Space</kbd> Nhảy</span>
         <span><kbd>E</kbd> Nạp đèn</span>
-        <span><kbd>Q</kbd> Tỏa sáng</span>
+        <span><kbd>P</kbd> Tạm dừng</span>
+      </div>
+      <div class="controls skills" aria-label="Kỹ năng và hồi chiêu">
+        <span><kbd>Shift</kbd> Lướt <strong id="dash_status"></strong></span>
+        <span><kbd>Q</kbd> Tỏa Sáng <strong id="pulse_status"></strong></span>
+        <span><kbd>F</kbd> Dịch chuyển <strong id="blink_status"></strong></span>
+        <span><kbd>R</kbd> Chùm sáng <strong id="beam_status"></strong></span>
       </div>
     </div>
-    <dialog id="result">
-      <p class="eyebrow">Đêm 1 · Đảo Bến</p>
+    <dialog id="menu" aria-labelledby="menu-title">
+      <h1 id="menu-title">Đảo Đèn Lồng</h1>
+      <p>Gom đom đóm và thắp đèn qua ba đêm.</p>
+      <div class="buttons">
+        <button id="play" autofocus>Bắt đầu</button>
+        <button class="secondary" id="menu-settings">Cài đặt</button>
+      </div>
+    </dialog>
+    <dialog id="intro" aria-labelledby="intro-title">
+      <p id="intro-night" class="eyebrow"></p>
+      <h2 id="intro-title"></h2>
+      <p id="intro-story"></p>
+      <div class="buttons">
+        <button id="start-night" autofocus>Vào Đêm</button>
+        <button class="secondary" id="intro-menu">Về menu</button>
+      </div>
+    </dialog>
+    <dialog id="pause" aria-labelledby="pause-title">
+      <h2 id="pause-title">Tạm dừng</h2>
+      <div class="buttons">
+        <button id="resume" autofocus>Tiếp tục</button>
+        <button class="secondary" id="pause-restart">Chơi lại Đêm</button>
+        <button class="secondary" id="pause-settings">Cài đặt</button>
+        <button class="secondary" id="pause-menu">Về menu</button>
+      </div>
+    </dialog>
+    <dialog id="settings" aria-labelledby="settings-title">
+      <h2 id="settings-title">Cài đặt</h2>
+      <label class="setting">Âm lượng <output for="volume" id="volume-value"></output>
+        <input id="volume" type="range" min="0" max="100" step="1"></label>
+      <label class="setting">Độ nhạy chuột <output for="sensitivity" id="sensitivity-value"></output>
+        <input id="sensitivity" type="range" min="50" max="150" step="5"></label>
+      <div class="buttons"><button id="settings-back" autofocus>Quay lại</button></div>
+    </dialog>
+    <dialog id="result" aria-labelledby="result-title">
+      <p id="result-night" class="eyebrow"></p>
       <h2 id="result-title"></h2>
       <p id="result-detail"></p>
-      <button id="restart">Chơi lại</button>
+      <div class="buttons">
+        <button id="result-action" autofocus></button>
+        <button class="secondary" id="result-menu">Về menu</button>
+      </div>
     </dialog>
     <script type="module" src="/view.js"></script>
   </body>
