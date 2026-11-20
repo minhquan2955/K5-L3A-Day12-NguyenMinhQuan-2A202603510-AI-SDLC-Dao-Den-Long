@@ -31,6 +31,7 @@
   background: var(--sky);
   font: 15px var(--f-body);
 }
+.colorblind { --shade: #00b3ff; --danger: #fff; }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; overflow: hidden; }
@@ -60,6 +61,7 @@ h2 { font-size: 2rem; line-height: 1.1; }
   font: 600 1.32rem var(--f-mono);
 }
 .clock.danger { color: var(--danger); animation: clock-warning 1s ease-in-out infinite alternate; }
+.colorblind .clock.danger::before { content: "⚠ "; }
 @keyframes clock-warning { to { opacity: .6; } }
 @media (prefers-reduced-motion: reduce) { .clock.danger { animation: none; } }
 .map { top: 24px; right: 24px; padding: 10px 12px; text-align: center; }
@@ -112,7 +114,11 @@ h2 { font-size: 2rem; line-height: 1.1; }
   text-shadow: 0 2px 6px var(--code), 0 2px 14px var(--code);
 }
 #hint.danger, #wind-warning { color: var(--danger); }
+.colorblind #hint.danger::before, .colorblind #wind-warning::before { content: "⚠ "; }
 #deposit-hint { padding: 5px 8px; border-radius: 6px; background: var(--panel); }
+#deposit-hint { display: grid; gap: 4px; justify-items: center; }
+#lamp-fuel { width: 150px; height: 8px; accent-color: var(--lantern); }
+#lamp-fuel.low { animation: clock-warning 1s ease-in-out infinite alternate; }
 .carry { display: flex; align-items: center; gap: 8px; padding: 8px 10px; }
 #carry-slots { display: flex; gap: 3px; }
 #carry-slots i { width: 11px; height: 17px; border: 1px solid var(--unlit); border-radius: 4px; }
@@ -143,6 +149,7 @@ button:hover { filter: brightness(1.15); }
 .setting { display: grid; grid-template-columns: 1fr auto; gap: 7px; margin-top: 18px; text-align: left; }
 .setting output { color: var(--core); font-family: var(--f-mono); }
 .setting input { grid-column: 1 / -1; width: 100%; accent-color: var(--gold); }
+.setting.checkbox-setting input { grid-column: 2; grid-row: 1; width: auto; justify-self: end; }
 @media (max-width: 720px), (max-height: 510px) {
   .brand, .map, .clock { top: 10px; }
   .brand, .movement { left: 10px; }

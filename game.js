@@ -16,6 +16,9 @@ const rounded = pos => pos.map(value => Number(value.toFixed(3)) || 0);
 const radians = degrees => (degrees % 360) * Math.PI / 180;
 const remaining = (deadline, tick) => Math.max(0, deadline - tick) / HZ;
 const canPick = (a, b) => distance(a, b) <= t.pickup_radius + EPSILON && Math.abs(a[1] - b[1]) <= t.pickup_height + EPSILON;
+const fuelUnits = fuel => Math.round(fuel * HZ);
+const fuelValue = units => Number((units / HZ).toFixed(1));
+const capacity = player => Math.min(t.capacity_max, t.carry_capacity + 2 * player.successfulLights);
 
 function seededRandom(seed) {
   let state = seed >>> 0;
@@ -76,12 +79,15 @@ export function createGame(seed, scenario = {}, night = 1) {
     const id = `L${i + 1}`;
     const override = overrides.get(id) ?? {};
     const lit = override.lit ?? (override.deposited === t.lantern_cost);
-    return { id, pos: override.pos ?? pos, lit, deposited: override.deposited ?? (lit ? t.lantern_cost : 0) };
+    const everLit = override.ever_lit ?? lit;
+    return { id, pos: override.pos ?? pos, lit, deposited: override.deposited ?? (lit ? t.lantern_cost : 0),
+      fuelUnits: lit ? fuelUnits(override.fuel ?? t.fuel_max) : 0, everLit, relitCount: 0 };
   });
   const oldPlayer = scenario.player ?? {};
   const player = {
     pos: [...(oldPlayer.pos ?? map.spawn)],
     flames: oldPlayer.flames ?? t.flames, carried: oldPlayer.carried ?? 0,
+    successfulLights: oldPlayer.successful_lights ?? 0,
     invulnerableUntil: oldPlayer.invuln_ticks ?? 0,
     respawnAt: 0, charmUntil: oldPlayer.charm_ticks ?? 0,
   };
@@ -115,7 +121,8 @@ export function nearbyLantern(game) {
   let range = t.interact_radius + EPSILON;
   for (const lamp of game.lanterns) {
     const gap = distance(game.player.pos, lamp.pos);
-    if (!lamp.lit && gap <= range && (!nearest || gap < range - EPSILON)) {
+    if ((!lamp.lit || lamp.fuelUnits < fuelUnits(t.fuel_max)) && gap <= range &&
+        (!nearest || gap < range - EPSILON || (Math.abs(gap - range) <= EPSILON && lamp.id < nearest.id))) {
       nearest = lamp;
       range = gap;
     }
@@ -175,7 +182,7 @@ function updateWind(game) {
 function collect(game, emit) {
   const { player, simTick: tick } = game;
   game.motes = game.motes.filter(mote => {
-    if (tick < mote.collectAt || player.carried >= t.carry_capacity || !canPick(player.pos, mote.pos)) return true;
+    if (tick < mote.collectAt || player.carried >= capacity(player) || !canPick(player.pos, mote.pos)) return true;
     player.carried += 1;
     emit('mote_picked', { carried: player.carried });
     return false;
@@ -194,15 +201,59 @@ function deposit(game, emit) {
   const { player } = game;
   const lamp = player.carried > 0 && nearbyLantern(game);
   if (!lamp) return;
-  const amount = Math.min(player.carried, t.lantern_cost - lamp.deposited);
+  if (lamp.lit) {
+    const used = Math.min(player.carried, Math.ceil((fuelUnits(t.fuel_max) - lamp.fuelUnits) / fuelUnits(t.fuel_per_mote)));
+    if (!used) return;
+    player.carried -= used;
+    lamp.fuelUnits = Math.min(fuelUnits(t.fuel_max), lamp.fuelUnits + used * fuelUnits(t.fuel_per_mote));
+    game.score += used * t.score.per_mote;
+    emit('refuel', { lantern_id: lamp.id, amount: used, fuel: fuelValue(lamp.fuelUnits) });
+    return;
+  }
+  const relight = lamp.everLit;
+  const cost = relight ? t.relight_cost : t.lantern_cost;
+  const amount = Math.min(player.carried, cost - lamp.deposited);
   player.carried -= amount;
   lamp.deposited += amount;
   game.score += amount * t.score.per_mote;
   if (amount > 0) emit('deposit', { lantern_id: lamp.id, amount, deposited: lamp.deposited });
-  if (lamp.deposited === t.lantern_cost) {
-    lamp.lit = true;
-    game.score += t.score.per_lantern;
-    emit('lantern_lit', { lantern_id: lamp.id });
+  if (lamp.deposited < cost) return;
+  lamp.lit = true;
+  lamp.everLit = true;
+  lamp.fuelUnits = fuelUnits(t.fuel_max);
+  player.successfulLights += 1;
+  if (relight) lamp.relitCount += 1;
+  game.score += relight ? t.score.per_relight : t.score.per_lantern;
+  emit('lantern_lit', { lantern_id: lamp.id, relight });
+}
+
+function updateLanternFuel(game, emit) {
+  const draining = new Map();
+  for (const shade of game.shades) {
+    if (shade.state !== 'drain') continue;
+    const lamp = game.lanterns.find(item => item.id === shade.targetLanternId);
+    if (lamp?.lit) draining.set(lamp, [...(draining.get(lamp) ?? []), shade]);
+  }
+  for (const lamp of game.lanterns) {
+    if (!lamp.lit) continue;
+    lamp.fuelUnits = Math.max(0, lamp.fuelUnits - fuelUnits(t.fuel_decay_per_s / HZ) -
+      (draining.get(lamp)?.length ?? 0) * fuelUnits(t.drain_per_s / HZ));
+    if (game.simTick % HZ === 0) {
+      for (const shade of draining.get(lamp) ?? []) {
+        emit('fuel_drain', { lantern_id: lamp.id, shade_id: shade.id, fuel: fuelValue(lamp.fuelUnits) });
+      }
+    }
+    if (lamp.fuelUnits === 0) {
+      lamp.lit = false;
+      lamp.deposited = 0;
+      emit('lantern_out', { lantern_id: lamp.id });
+      for (const shade of game.shades) {
+        if (shade.state === 'drain' && shade.targetLanternId === lamp.id) {
+          shade.state = 'wander';
+          shade.targetLanternId = undefined;
+        }
+      }
+    }
   }
 }
 
@@ -257,11 +308,14 @@ export function stepGame(game, input = idleInput, onEvent = () => {}, aimPoint) 
       player.carried >= t.pulse_cost && sim >= game.pulseReadyAt) {
     player.carried -= t.pulse_cost;
     game.pulseReadyAt = sim + Math.round(t.pulse_cooldown_s * HZ);
+    const draining = new Set(game.shades.filter(shade => shade.state === 'drain').map(shade => shade.id));
     const stunned_ids = pulseEnemies(game, emit);
-    game.score += stunned_ids.length * t.score.per_stun;
+    game.score += stunned_ids.reduce((score, id) => score + t.score.per_stun * (draining.has(id) ? 3 : 1), 0);
     emit('pulse', { stunned_ids });
   }
   moveEnemies(game);
+  updateLanternFuel(game, emit);
+  updateRefuges(game);
   if (!player.respawnAt && player.flames > 0) {
     contactEnemies(game, emit, () => {
       if (sim < player.invulnerableUntil) return false;
@@ -279,12 +333,14 @@ export function stepGame(game, input = idleInput, onEvent = () => {}, aimPoint) 
 
   let reason;
   if (player.flames === 0) reason = 'no_flames';
-  else if (game.lanterns.every(lamp => lamp.lit)) reason = 'all_lit';
-  else if (game.timeLeft <= 0) reason = 'dawn';
+  else if (game.timeLeft <= 0) reason = game.lanterns.filter(lamp => lamp.lit).length >=
+    Math.ceil(t.win_ratio * game.lanterns.length) ? 'dawn_survived' : 'dawn';
   if (reason) {
-    game.state = reason === 'all_lit' ? 'won' : 'lost';
+    game.state = reason === 'dawn_survived' ? 'won' : 'lost';
     if (game.state === 'won') {
-      game.score += Math.floor(Math.max(0, game.timeLeft)) * t.score.per_second_left + player.flames * t.score.per_flame_left;
+      game.score += game.lanterns.filter(lamp => lamp.lit)
+        .reduce((score, lamp) => score + 50 + Math.floor(lamp.fuelUnits / HZ), 0) +
+        player.flames * t.score.per_flame_left;
     }
     emit('game_over', { result: game.state, reason });
   }
@@ -296,11 +352,13 @@ export function snapshot(game) {
     type: 'snapshot', tick, sim_tick: simTick, night, state, time_left_s: timeLeft, score,
     wind: { active: wind.active, dir_deg: wind.dir_deg },
     player: { pos: rounded(player.pos), vel: rounded(player.vel), grounded: player.grounded,
-      flames: player.flames, carried: player.carried, invuln: remaining(player.invulnerableUntil, simTick),
+      flames: player.flames, carried: player.carried, capacity: capacity(player), invuln: remaining(player.invulnerableUntil, simTick),
       dash_cd_s: simTick < player.charmUntil ? 0 : remaining(game.dashReadyAt, simTick),
       pulse_cd_s: remaining(game.pulseReadyAt, simTick), charm_s: remaining(player.charmUntil, simTick) },
-    lanterns: lanterns.map(lamp => ({ ...lamp, pos: rounded(lamp.pos) })),
-    shades: shades.map(({ id, pos, state }) => ({ id, pos: rounded(pos), state })),
+    lanterns: lanterns.map(({ fuelUnits: units, everLit, relitCount, ...lamp }) => ({ ...lamp,
+      fuel: lamp.lit ? fuelValue(units) : 0, ever_lit: everLit, relit_count: relitCount, pos: rounded(lamp.pos) })),
+    shades: shades.map(({ id, pos, state, targetLanternId }) => ({ id, pos: rounded(pos), state,
+      ...(targetLanternId ? { target_lantern_id: targetLanternId } : {}) })),
     motes_active: motes.length,
     motes: motes.map(({ id, pos, kind, expiresAt }) => ({ id, pos: rounded(pos), kind,
       ttl_s: kind === 'dropped' ? remaining(expiresAt, simTick) : null })),

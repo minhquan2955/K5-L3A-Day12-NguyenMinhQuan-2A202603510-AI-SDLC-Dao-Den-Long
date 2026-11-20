@@ -26,7 +26,7 @@
       <div class="bottom">
         <p id="wind-warning" hidden></p>
         <p id="hint" role="status"></p>
-        <p id="deposit-hint" hidden></p>
+        <p id="deposit-hint" hidden><span></span><progress id="lamp-fuel" max="100" value="0"></progress></p>
         <div class="carry" aria-label="Đom đóm đang mang">
           <div id="carry-slots" aria-hidden="true"></div>
           <strong id="carried"></strong>
@@ -78,6 +78,8 @@
         <input id="volume" type="range" min="0" max="100" step="1"></label>
       <label class="setting">Độ nhạy chuột <output for="sensitivity" id="sensitivity-value"></output>
         <input id="sensitivity" type="range" min="50" max="150" step="5"></label>
+      <label class="setting checkbox-setting">Bảng màu dễ phân biệt
+        <input id="colorblind" type="checkbox"></label>
       <div class="buttons"><button id="settings-back" autofocus>Quay lại</button></div>
     </dialog>
     <dialog id="result" aria-labelledby="result-title">

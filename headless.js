@@ -41,7 +41,9 @@ function validScenario(scenario, night) {
   const charmIds = new Set();
   return optional(scenario, 'player', player => isObject(player) &&
       optional(player, 'pos', position) &&
-      optional(player, 'carried', value => integer(value, 0, tuning.carry_capacity)) &&
+      optional(player, 'successful_lights', tickCount) &&
+      optional(player, 'carried', value => integer(value, 0, Math.min(tuning.capacity_max,
+        tuning.carry_capacity + 2 * (player.successful_lights ?? 0)))) &&
       optional(player, 'flames', tickCount) &&
       ['invuln_ticks', 'dash_cd_ticks', 'pulse_cd_ticks', 'charm_ticks'].every(key => optional(player, key, tickCount))) &&
     optional(scenario, 'random_motes', isBoolean) &&
@@ -51,7 +53,8 @@ function validScenario(scenario, night) {
     optional(scenario, 'motes', value => list(value, position)) &&
     optional(scenario, 'shades', value => list(value, shade => isObject(shade) && position(shade.pos) &&
       optional(shade, 'id', id => uniqueId(shadeIds, id)) &&
-      optional(shade, 'state', state => ['spawning', 'wander', 'chase', 'recoil', 'stunned'].includes(state)) &&
+      optional(shade, 'state', state => ['spawning', 'wander', 'chase', 'recoil', 'stunned', 'drain'].includes(state)) &&
+      optional(shade, 'target_lantern_id', id => lampIds.has(id)) &&
       optional(shade, 'state_ticks_left', tickCount))) &&
     optional(scenario, 'drifters', value => list(value, drifter => isObject(drifter) && position(drifter.pos) &&
       optional(drifter, 'id', id => uniqueId(drifterIds, id)) &&
@@ -64,6 +67,8 @@ function validScenario(scenario, night) {
       optional(charm, 'available', isBoolean) && optional(charm, 'respawn_ticks', tickCount))) &&
     optional(scenario, 'lanterns', value => list(value, lamp => isObject(lamp) && lampIds.delete(lamp.id) &&
       optional(lamp, 'pos', position) && optional(lamp, 'lit', isBoolean) &&
+      optional(lamp, 'fuel', value => finite(value) && value >= 0 && value <= tuning.fuel_max) &&
+      optional(lamp, 'ever_lit', isBoolean) &&
       optional(lamp, 'deposited', amount => integer(amount, 0, tuning.lantern_cost)))) &&
     optional(scenario, 'time_left_s', value => finite(value) && value >= 0);
 }

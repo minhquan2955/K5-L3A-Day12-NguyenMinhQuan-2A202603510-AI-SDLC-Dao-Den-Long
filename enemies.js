@@ -9,7 +9,9 @@ const SHADE_CENTER_HEIGHT = 1;
 const ids = new Intl.Collator('en', { numeric: true });
 const byId = (a, b) => ids.compare(a.id, b.id);
 const distance = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
-const inside = (pos, lamp) => distance(pos, lamp.pos) < t.safe_radius - EPSILON;
+const fuelUnits = fuel => Math.round(fuel * HZ);
+const inside = (pos, lamp) => lamp.fuelUnits >= fuelUnits(t.low_fuel_threshold) &&
+  distance(pos, lamp.pos) < t.safe_radius - EPSILON;
 
 function direction(from, to) {
   const length = distance(from, to);
@@ -35,6 +37,7 @@ function createShade(game, entry) {
     id: entry.id ?? game.nextShadeId(),
     pos: [...pos],
     state,
+    targetLanternId: entry.target_lantern_id,
     stateUntil: game.simTick + state_ticks_left,
     stunnedUntil: state === 'stunned' ? game.simTick + state_ticks_left : 0,
     heading: ((game.shades?.length ?? 0) + pos[0] + pos[2]) % TAU,
@@ -162,8 +165,13 @@ function exitRefuge(game, shade, lamp) {
 }
 
 export function updateRefuges(game) {
-  game.refuges = game.lanterns.filter(lamp => lamp.lit);
+  game.refuges = game.lanterns.filter(lamp => lamp.lit && lamp.fuelUnits >= fuelUnits(t.low_fuel_threshold));
   for (const shade of game.shades) {
+    const target = game.lanterns.find(lamp => lamp.id === shade.targetLanternId);
+    if (shade.state === 'drain' && target && game.refuges.includes(target)) {
+      shade.state = 'wander';
+      shade.targetLanternId = undefined;
+    }
     if (shade.refugePath?.length) continue;
     const lamp = game.refuges.find(lamp => inside(shade.pos, lamp));
     if (lamp) shade.refugePath = exitRefuge(game, shade, lamp);
@@ -237,11 +245,35 @@ function moveShade(game, shade) {
     return;
   }
   const gap = distance(shade.pos, player.pos);
+  if (shade.state === 'drain') {
+    const target = game.lanterns.find(lamp => lamp.id === shade.targetLanternId);
+    if (!player.respawnAt && gap <= 6 + EPSILON) {
+      shade.state = 'chase';
+      shade.targetLanternId = undefined;
+    } else if (!target?.lit || target.fuelUnits >= fuelUnits(t.low_fuel_threshold) ||
+        distance(shade.pos, target.pos) > 2 + EPSILON) {
+      shade.state = 'wander';
+      shade.targetLanternId = undefined;
+    } else return;
+  }
+  if (shade.state === 'stunned' || shade.state === 'recoil') shade.state = 'wander';
   shade.state = shadeBehavior(shade, player);
+  if (shade.state === 'chase') shade.targetLanternId = undefined;
   const speed = game.night === 3 ? t.shade_speed_night3 : t.shade_speed;
   const step = speed / HZ;
   if (shade.state === 'wander') {
-    if (moveShadeAlong(game, shade, [Math.cos(shade.heading), Math.sin(shade.heading)], step) < step) {
+    const weak = game.lanterns.filter(lamp => lamp.lit && lamp.fuelUnits < fuelUnits(t.low_fuel_threshold));
+    const candidates = weak.length ? weak : game.lanterns.filter(lamp => !lamp.lit);
+    const target = candidates.map(lamp => ({ lamp, gap: distance(shade.pos, lamp.pos) }))
+      .sort((a, b) => a.gap - b.gap || a.lamp.id.localeCompare(b.lamp.id))[0];
+    shade.targetLanternId = target?.lamp.id;
+    if (target && target.lamp.lit && target.gap <= 2 + EPSILON) {
+      shade.state = 'drain';
+      return;
+    }
+    const heading = target ? direction(shade.pos, target.lamp.pos) : [Math.cos(shade.heading), Math.sin(shade.heading)];
+    if (target && target.gap <= 2 + EPSILON) return;
+    if (moveShadeAlong(game, shade, heading, step) < step) {
       shade.heading += Math.PI / 3;
     }
     return;

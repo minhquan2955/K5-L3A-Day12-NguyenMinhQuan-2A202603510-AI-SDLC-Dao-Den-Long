@@ -9,22 +9,22 @@ npm ci
 npm start
 ```
 
-Mở http://127.0.0.1:3000, chọn **Bắt đầu** rồi **Vào Đêm**. Thắp đủ đèn để lần lượt đi qua **Đảo Bến**, **Đảo Cau** và **Đảo Chuông**. Thắng Đêm 3 sẽ mở màn **Bình Minh** và hiện tổng điểm. Có thể thử lại Đêm đang chơi. Cài đặt âm lượng và độ nhạy chuột được lưu trong trình duyệt.
+Mở http://127.0.0.1:3000, chọn **Bắt đầu** rồi **Vào Đêm**. Giữ ít nhất 60% đèn sáng đến bình minh để lần lượt qua **Đảo Bến**, **Đảo Cau** và **Đảo Chuông**. Thắng Đêm 3 sẽ mở màn **Bình Minh** và hiện tổng điểm. Có thể thử lại Đêm đang chơi. Âm lượng, độ nhạy chuột và bảng màu dễ phân biệt được lưu trong trình duyệt.
 
 | Phím | Thao tác |
 | --- | --- |
 | **WASD** hoặc **mũi tên** | Di chuyển |
 | **Space** | Nhảy |
 | **Shift** | Lướt theo hướng đang đi hoặc hướng nhìn. Hồi 1,5 giây. |
-| **E** | Nạp đom đóm vào đèn chưa sáng gần nhất |
+| **E** | Thắp đèn, thắp lại đèn tắt hoặc châm dầu vào đèn sáng gần nhất |
 | **Q** | Tốn 3 đom đóm để đẩy lùi và làm choáng Bóng Mực. Hồi 3 giây. |
 | **F** | Đưa chuột về hướng muốn dịch chuyển rồi nhấn F. Mây đi tối đa 5 m và tốn 1 đom đóm. Chiêu dừng trước mép vực hoặc vật cản. |
 | **R** | Đưa chuột tới nơi muốn ngắm trên đảo rồi nhấn R. Tốn 2 đom đóm để bắn chùm sáng dài 12 m, rộng 1,4 m, làm choáng Bóng Mực 1,5 giây. Hồi 1,2 giây. |
 | **Esc** hoặc **P** | Tạm dừng. Từ menu có thể tiếp tục, chơi lại Đêm, mở cài đặt hoặc về menu chính. |
 
-Mây bắt đầu mỗi Đêm với 3 Ngọn Lửa và mang tối đa 10 đom đóm. Mỗi đèn cần 10 đom đóm và giữ phần đã nạp. Đèn sáng ngăn Bóng Mực. Gió Lạc có thể cướp ánh sáng ngay trong vùng an toàn. Ở Đêm 2 và 3, nhặt **Bùa Gió** để chạy nhanh hơn và lướt lại ngay khi lượt lướt kết thúc. Đi sát mép đảo có thể rơi và mất một Ngọn Lửa cùng toàn bộ ánh sáng đang mang.
+Mây bắt đầu mỗi Đêm với 3 Ngọn Lửa và sức chứa 10 đom đóm. Mỗi lần thắp thành công tăng sức chứa thêm 2, tối đa 20. Đèn tự cạn dầu; đom đóm có thể châm thêm 10 dầu hoặc thắp lại đèn cạn. Bóng Mực hút dầu từ đèn yếu dưới 30%, nơi không còn vùng an toàn. Gió Lạc có thể cướp ánh sáng ngay trong vùng an toàn. Ở Đêm 2 và 3, nhặt **Bùa Gió** để chạy nhanh hơn và lướt lại ngay khi lượt lướt kết thúc. Đi sát mép đảo có thể rơi và mất một Ngọn Lửa cùng toàn bộ ánh sáng đang mang.
 
-Có 5, 6 và 7 đèn ở ba Đêm, với thời lượng tương ứng 5:00, 5:30 và 6:00. Điểm được tính theo mỗi đom đóm nạp (+10), mỗi đèn sáng (+100) và mỗi Bóng Mực trúng Tỏa Sáng (+5). Kỹ năng R giữ điểm thưởng làm choáng (+5). Khi thắng một Đêm, cộng 2 điểm cho mỗi giây nguyên và 50 điểm cho mỗi Ngọn Lửa còn lại. Tổng điểm chỉ tính các Đêm đã thắng.
+Có 5, 6 và 7 đèn ở ba Đêm, với thời lượng tương ứng 4:00, 4:30 và 5:00. Mây cần giữ lần lượt 3, 4 và 5 đèn sáng đến bình minh. Điểm được tính theo mỗi đom đóm nạp (+5), đèn thắp lần đầu (+100), đèn thắp lại (+40), Bóng Mực trúng Tỏa Sáng (+5 hoặc +15 nếu đang hút dầu), và điểm bình minh theo dầu còn lại. Tổng điểm chỉ tính các Đêm đã thắng.
 
 ## Kiểm chứng
 
@@ -33,11 +33,11 @@ npm test
 node headless.js --seed 42 --night 3 --ticks 600 --out out.jsonl
 ```
 
-CLI hỗ trợ `--night 1|2|3`, `--scenario`, `--inputs` và `--snapshot-every` theo [Test Contract v1.1](PRD-1-Phase-2-Ba-hon-dao.md). Các input mở rộng `blink` và `beam` dùng `aim_deg` (0° là +Z và 90° là +X). Khi chuột chưa ngắm vào đảo, bản web dùng hướng nhìn của Mây.
+CLI hỗ trợ `--night 1|2|3`, `--scenario`, `--inputs` và `--snapshot-every` theo [Test Contract v1.2](PRD-2-Phase-3-Den-can-dau.md). Các input mở rộng `blink` và `beam` dùng `aim_deg` (0° là +Z và 90° là +X). Khi chuột chưa ngắm vào đảo, bản web dùng hướng nhìn của Mây.
 
 HUD ưu tiên Be Vietnam Pro và JetBrains Mono nếu máy có sẵn. Game dùng font dự phòng trên máy để chạy offline. Bảng màu giao diện lấy từ PRD-1. Cây, đá và mô hình 3D dùng thêm màu vật liệu để phân biệt địa hình.
 
-Xem [kiểm chứng và changelog Phase 2](docs/proof/phase-2.md), [bằng chứng Phase 1](docs/proof/phase-1.md) và [harness cho agent](AGENTS.md).
+Xem [kiểm chứng và changelog Phase 3](docs/proof/phase-3.md), [kiểm chứng Phase 2](docs/proof/phase-2.md), [bằng chứng Phase 1](docs/proof/phase-1.md) và [harness cho agent](AGENTS.md).
 
 ### Sáng tạo của tôi
 

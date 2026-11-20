@@ -121,6 +121,8 @@ scene.add(new THREE.Points(stars, new THREE.PointsMaterial({ color: 0xe0cccf, si
 const paper = material(color('--core'), { emissive: color('--lantern'), emissiveIntensity: .8 });
 const frame = material(0x352534);
 const lanternGeometry = new THREE.CylinderGeometry(.66, .52, .96, 6);
+const tearGeometry = new THREE.BoxGeometry(.5, .045, .045);
+const tearSurface = material(0x322a34);
 const lamps = new Map();
 const map = byId('map');
 const mapPlayer = document.createElement('i');
@@ -139,6 +141,10 @@ function makeLamp(lamp) {
   mesh(object, new THREE.CylinderGeometry(.9, 1.16, .25, 8), rockSurface, 0, .125);
   mesh(object, new THREE.CylinderGeometry(.17, .24, 2.75, 8), frame, 0, 1.45);
   const lightPaper = mesh(object, lanternGeometry, paper.clone(), 0, 3.02);
+  const tears = [mesh(object, tearGeometry, tearSurface, 0, 3.05, .67),
+    mesh(object, tearGeometry, tearSurface, 0, 2.98, .67)];
+  tears[0].rotation.y = .55;
+  tears[1].rotation.y = -.55;
   mesh(object, new THREE.CylinderGeometry(.64, .71, .12, 6), frame, 0, 2.53);
   mesh(object, new THREE.ConeGeometry(1.08, .49, 6), material(0x79524b), 0, 3.72);
   const halo = glow(object, color('--lantern'), 8.2, 3.05);
@@ -151,7 +157,7 @@ function makeLamp(lamp) {
   const marker = document.createElement('i');
   markPosition(marker, lamp.pos[0], lamp.pos[2]);
   map.insertBefore(marker, mapPlayer);
-  lamps.set(lamp.id, { lightPaper, halo, light, ring, marker });
+  lamps.set(lamp.id, { object, lightPaper, tears, halo, light, ring, marker });
 }
 
 const roofSurface = material(0x79524b);
@@ -290,7 +296,14 @@ const shadeBody = mesh(shadeTemplate, new THREE.IcosahedronGeometry(.84, 1), sha
 shadeBody.scale.y = 1.22;
 const eye = new THREE.MeshBasicMaterial({ color: color('--shade') });
 for (const x of [-.26, .26]) mesh(shadeTemplate, new THREE.SphereGeometry(.09, 9, 6), eye, x, .12, .75);
-glow(shadeTemplate, color('--shade'), 3.8, -.03);
+const shadeHalo = glow(shadeTemplate, color('--shade'), 3.8, -.03);
+function applyColorblindColors() {
+  const shade = color('--shade');
+  shadeSurface.emissive.set(shade);
+  stunnedSurface.emissive.set(shade);
+  eye.color.set(shade);
+  shadeHalo.material.color.set(shade);
+}
 const drifters = new Map();
 const drifterTemplate = new THREE.Group();
 const mist = material(color('--drifter'), { transparent: true, opacity: .76, depthWrite: false });
@@ -344,7 +357,7 @@ const controls = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown'
 const held = (...codes) => codes.some(code => keys.has(code));
 const hud = Object.fromEntries(['flames', 'carried', 'lanterns', 'time', 'score'].map(id => [id, byId(id)]));
 const abilities = ['dash', 'pulse', 'blink', 'beam'].map(name => [name, byId(`${name}_status`)]);
-const slots = Array.from({ length: tuning.carry_capacity }, () => document.createElement('i'));
+const slots = Array.from({ length: tuning.capacity_max }, () => document.createElement('i'));
 const flames = Array.from({ length: tuning.flames }, () => document.createElement('span'));
 for (const flame of flames) {
   flame.textContent = '◆';
@@ -395,6 +408,15 @@ for (const [name, fallback] of Object.entries(settings)) {
     try { localStorage.setItem(`dao-den-long.${name}`, input.value); } catch {}
   });
 }
+const colorblind = byId('colorblind');
+try { colorblind.checked = localStorage.getItem('dao-den-long.colorblind') === 'true'; } catch {}
+document.documentElement.classList.toggle('colorblind', colorblind.checked);
+applyColorblindColors();
+colorblind.addEventListener('change', () => {
+  document.documentElement.classList.toggle('colorblind', colorblind.checked);
+  applyColorblindColors();
+  try { localStorage.setItem('dao-den-long.colorblind', String(colorblind.checked)); } catch {}
+});
 
 const notes = {
   mote_picked: [660, 920], deposit: [494, 622], lantern_lit: [523, 659, 784, 1047],
@@ -557,7 +579,7 @@ function showResult(reason) {
   playCue(won ? 'won' : 'lost');
   const dawn = won && game.night === 3;
   const explanations = {
-    all_lit: 'Mây đã thắp sáng tất cả đèn.',
+    dawn_survived: 'Đủ đèn còn sáng đến bình minh.',
     dawn: 'Trời đã sáng khi vẫn còn đèn tắt.',
     no_flames: 'Mây đã hết Ngọn Lửa.',
   };
@@ -594,7 +616,8 @@ function onEvent(event) {
   }
   const messages = {
     mote_picked: '+1 đom đóm', deposit: `Đã nạp ${data.amount} ánh sáng`,
-    lantern_lit: 'Một ngọn đèn đã sáng!',
+    lantern_lit: data.relight ? 'Đèn đã được thắp lại!' : 'Một ngọn đèn đã sáng!',
+    refuel: `Đã châm dầu (${data.fuel}%)`, lantern_out: 'Một ngọn đèn đã tắt!',
     player_hit: data.by === 'fall' ? 'Mây đã rơi khỏi đảo!' : 'Bóng Mực đã chạm vào Mây!',
     pulse: 'Mây tỏa sáng!', blink: 'Mây vừa dịch chuyển',
     beam: data.stunned_ids?.length ? `Chùm sáng trúng ${data.stunned_ids.length} Bóng Mực` : 'Mây đã bắn chùm sáng',
@@ -681,7 +704,7 @@ function markNearestLantern(x, y, z) {
   let nearest;
   let distance = Infinity;
   for (const lamp of game.lanterns) {
-    if (lamp.lit) continue;
+    if (lamp.lit && lamp.fuelUnits >= tuning.fuel_max * HZ) continue;
     const gap = Math.hypot(lamp.pos[0] - x, lamp.pos[1] - y, lamp.pos[2] - z);
     if (gap < distance) {
       nearest = lamp;
@@ -708,7 +731,7 @@ function drawHud(lit, x, y, z) {
   hud.flames.setAttribute('aria-label', `${player.flames}/${tuning.flames}`);
   flames.forEach((flame, i) => flame.classList.toggle('spent', i >= player.flames));
   slots.forEach((slot, i) => slot.classList.toggle('filled', i < player.carried));
-  label(hud.carried, `${player.carried}/${tuning.carry_capacity}`);
+  label(hud.carried, `${player.carried}/${player.capacity}`);
   label(hud.lanterns, `${lit}/${lanterns.length}`);
   const seconds = Math.max(0, Math.ceil(game.timeLeft));
   label(hud.time, `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`);
@@ -728,8 +751,16 @@ function drawHud(lit, x, y, z) {
   }
   const lamp = nearbyLantern(game);
   const deposit = byId('deposit-hint');
-  deposit.hidden = !lamp || !player.carried;
-  if (!deposit.hidden) label(deposit, `E — Nạp ánh sáng (${lamp.deposited}/${tuning.lantern_cost})`);
+  deposit.hidden = !lamp;
+  if (lamp) {
+    const cost = lamp.everLit ? tuning.relight_cost : tuning.lantern_cost;
+    label(deposit.querySelector('span'), lamp.lit ? 'E — Châm dầu' :
+      `E — ${lamp.everLit ? 'Thắp lại' : 'Nạp ánh sáng'} (${lamp.deposited}/${cost})`);
+    const fuel = byId('lamp-fuel');
+    fuel.hidden = !lamp.lit;
+    fuel.value = lamp.fuelUnits / HZ;
+    fuel.classList.toggle('low', lamp.lit && lamp.fuelUnits < tuning.low_fuel_threshold * HZ);
+  }
   hint.hidden = simTick >= messageUntil;
   markNearestLantern(x, y, z);
 }
@@ -770,9 +801,16 @@ renderer.setAnimationLoop(now => {
   ambient.color.set(0xc5d6ff).lerp(warmGlow, progress * .38);
   for (const lamp of game.lanterns) {
     const visual = lamps.get(lamp.id);
+    const lowFuelBlink = lamp.lit && lamp.fuelUnits < tuning.low_fuel_threshold * HZ && Math.floor(simTick / (HZ / 2)) % 2 === 1;
+    const safe = lamp.lit && lamp.fuelUnits >= tuning.low_fuel_threshold * HZ;
+    visual.object.scale.setScalar(lamp.lit ? 1 : .8);
+    visual.ring.scale.setScalar(lamp.lit ? 1 : 1.25);
     visual.lightPaper.material.color.set(color(lamp.lit ? '--core' : '--unlit'));
     visual.lightPaper.material.emissiveIntensity = lamp.lit ? .9 : 0;
-    visual.light.visible = visual.halo.visible = visual.ring.visible = lamp.lit;
+    visual.tears.forEach(tear => { tear.visible = !lamp.lit; });
+    visual.object.visible = !lowFuelBlink;
+    visual.light.visible = visual.halo.visible = lamp.lit && !lowFuelBlink;
+    visual.ring.visible = safe;
     visual.marker.classList.toggle('lit', lamp.lit);
   }
   markPosition(mapPlayer, x, z);
