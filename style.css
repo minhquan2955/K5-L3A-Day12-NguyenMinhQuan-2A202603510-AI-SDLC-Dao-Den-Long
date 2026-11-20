@@ -29,9 +29,10 @@
   --on-light: #1a1206;
   color: var(--ink);
   background: var(--sky);
-  font: 15px var(--f-body);
+  font: 18px var(--f-body);
 }
 .colorblind { --shade: #00b3ff; --danger: #fff; }
+.large-text { font-size: 22.5px; }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { margin: 0; overflow: hidden; }
@@ -98,6 +99,7 @@ h2 { font-size: 2rem; line-height: 1.1; }
   font: 700 .82rem var(--f-mono);
 }
 #lamp-arrow i { font: normal 1.35rem var(--f-body); }
+#shade-arrow { position: fixed; display: flex; gap: 8px; padding: 6px 10px; border: 2px solid var(--danger); border-radius: 8px; background: var(--panel); color: var(--danger); transform: translate(-50%, -50%); font-weight: 800; pointer-events: none; }
 .bottom {
   bottom: 24px;
   left: 50%;
@@ -119,6 +121,7 @@ h2 { font-size: 2rem; line-height: 1.1; }
 #deposit-hint { display: grid; gap: 4px; justify-items: center; }
 #lamp-fuel { width: 150px; height: 8px; accent-color: var(--lantern); }
 #lamp-fuel.low { animation: clock-warning 1s ease-in-out infinite alternate; }
+#countdown-warning, #fuel-alert { color: var(--danger); font-weight: 800; padding: 4px 8px; background: var(--panel); border-radius: 6px; }
 .carry { display: flex; align-items: center; gap: 8px; padding: 8px 10px; }
 #carry-slots { display: flex; gap: 3px; }
 #carry-slots i { width: 11px; height: 17px; border: 1px solid var(--unlit); border-radius: 4px; }
@@ -150,7 +153,23 @@ button:hover { filter: brightness(1.15); }
 .setting output { color: var(--core); font-family: var(--f-mono); }
 .setting input { grid-column: 1 / -1; width: 100%; accent-color: var(--gold); }
 .setting.checkbox-setting input { grid-column: 2; grid-row: 1; width: auto; justify-self: end; }
+.keybinds { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 18px; border: 1px solid var(--rule); border-radius: 8px; text-align: left; }
+.keybinds legend { color: var(--core); }
+.keybinds div { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.keybinds button { min-width: 48px; padding: 5px 8px; }
+.keybinds #reset-bindings { grid-column: 1 / -1; }
+#keybind-message, #score-message { min-height: 1.4em; color: var(--core); }
+#score-form { display: grid; gap: 8px; margin-top: 18px; }
+#score-name { min-width: 0; border: 1px solid var(--rule); border-radius: 6px; padding: 9px; background: var(--code); color: var(--ink); font: inherit; }
+#leaderboard-list { text-align: left; line-height: 1.8; }
+@media (min-width: 721px) and (min-height: 511px) {
+  .eyebrow, .flame-stat, .stats, .stats strong, .map-key, .controls, .controls strong,
+  #carried, #charm-status, #lamp-arrow, kbd { font-size: 1rem; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; } }
+.reduced-motion *, .reduced-motion *::before, .reduced-motion *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 @media (max-width: 720px), (max-height: 510px) {
+  :root { font-size: 15px; }
   .brand, .map, .clock { top: 10px; }
   .brand, .movement { left: 10px; }
   .map, .skills { right: 10px; }
@@ -161,3 +180,4 @@ button:hover { filter: brightness(1.15); }
   .map-disc { width: 66px; margin-block: 4px; }
   .clock { padding: 4px 8px; font-size: 1.04rem; }
 }
+:root.large-text { font-size: 22.5px; }

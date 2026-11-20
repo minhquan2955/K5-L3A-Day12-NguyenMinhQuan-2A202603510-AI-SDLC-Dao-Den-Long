@@ -1,9 +1,11 @@
 {
-  "contract_version": "1.2",
+  "contract_version": "1.3",
   "team": "2A202603510-NguyenMinhQuan",
   "build_cmd": "npm ci",
-  "run_cmd": "npm start",
+  "run_cmd": "node server.js",
   "headless_cmd": "node headless.js",
+  "bench_cmd": "node bench.js",
+  "soak_cmd": "node soak.js",
   "tuning": {
     "player_speed": 6,
     "acceleration_s": 0.1,

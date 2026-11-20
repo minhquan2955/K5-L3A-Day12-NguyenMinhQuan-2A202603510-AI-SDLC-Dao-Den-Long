@@ -107,8 +107,10 @@ function run({ scenario = empty, frames = [], ticks = 60, every = 1, seed = 53, 
   }
 }
 
-test('v1.2 selects each night with its own lanterns, time and resources', () => {
-  assert.equal(contract.contract_version, '1.2');
+test('v1.3 keeps each night contract and adds benchmark and soak commands', () => {
+  assert.equal(contract.contract_version, '1.3');
+  assert.equal(contract.bench_cmd, 'node bench.js');
+  assert.equal(contract.soak_cmd, 'node soak.js');
   assert.deepEqual([t.fuel_max, t.fuel_decay_per_s, t.fuel_per_mote, t.relight_cost,
     t.win_ratio, t.drain_per_s, t.low_fuel_threshold, t.capacity_max], [100, 1, 10, 5, .6, 5, 30, 20]);
   for (const [night, duration, lamps, charms] of [[1, 240, 5, 0], [2, 270, 6, 1], [3, 300, 7, 2]]) {

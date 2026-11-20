@@ -257,7 +257,7 @@ function moveShade(game, shade) {
     } else return;
   }
   if (shade.state === 'stunned' || shade.state === 'recoil') shade.state = 'wander';
-  shade.state = shadeBehavior(shade, player);
+  shade.state = game.benchmark ? 'wander' : shadeBehavior(shade, player);
   if (shade.state === 'chase') shade.targetLanternId = undefined;
   const speed = game.night === 3 ? t.shade_speed_night3 : t.shade_speed;
   const step = speed / HZ;

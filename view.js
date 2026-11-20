@@ -1,10 +1,16 @@
 import * as THREE from 'three';
+import { summarizeFrames } from './bench-metrics.js';
+import { moveEnemies, updateRefuges } from './enemies.js';
+import contract from './game.contract.json' with { type: 'json' };
 import { createGame, HZ, nearbyLantern, stepGame, tuning } from './game.js';
 
 const byId = id => document.getElementById(id);
 const hint = byId('hint');
 const canvas = byId('world');
 const colors = getComputedStyle(document.documentElement);
+const query = new URLSearchParams(location.search);
+const benchmarkMode = query.has('benchmark');
+const benchmarkDuration = Number(query.get('duration')) || 30;
 const color = name => colors.getPropertyValue(name).trim();
 const warmGlow = new THREE.Color(color('--core'));
 let renderer;
@@ -352,8 +358,36 @@ function syncObjects(entries, objects, template, update) {
 
 const keys = new Set();
 const taps = new Set();
-const actions = new Set(['Space', 'KeyE', 'KeyQ', 'KeyF', 'KeyR', 'ShiftLeft', 'ShiftRight']);
-const controls = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ...actions]);
+const defaultBindings = { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', jump: 'Space', dash: 'ShiftLeft',
+  interact: 'KeyE', pulse: 'KeyQ', pause: 'KeyP' };
+let bindings = { ...defaultBindings };
+try {
+  const saved = JSON.parse(localStorage.getItem('dao-den-long.bindings'));
+  const actions = Object.keys(defaultBindings);
+  const codes = actions.map(key => saved?.[key]);
+  if (codes.every(code => /^(Key[A-Z]|Digit[0-9]|Space|ShiftLeft|Enter)$/.test(code)) && new Set(codes).size === actions.length) {
+    bindings = Object.fromEntries(actions.map(key => [key, saved[key]]));
+  }
+} catch {}
+const actions = new Set();
+const controls = new Set();
+function refreshBindings() {
+  actions.clear();
+  controls.clear();
+  for (const [action, code] of Object.entries(bindings)) {
+    controls.add(code);
+    if (!['up', 'down', 'left', 'right'].includes(action)) actions.add(code);
+  }
+  for (const code of ['KeyF', 'KeyR', 'ShiftRight', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']) controls.add(code);
+  for (const code of ['KeyF', 'KeyR', 'ShiftRight']) actions.add(code);
+  document.querySelectorAll('[data-binding]').forEach(key => { key.textContent = bindingLabel(bindings[key.dataset.binding]); });
+  document.querySelectorAll('[data-rebind]').forEach(button => { button.textContent = bindingLabel(bindings[button.dataset.rebind]); });
+}
+function bindingLabel(code) {
+  return ({ Space: 'Space', ShiftLeft: 'Shift', ShiftRight: 'Shift', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→' })[code] ??
+    code.replace(/^Key/, '').replace(/^Digit/, '');
+}
+refreshBindings();
 const held = (...codes) => codes.some(code => keys.has(code));
 const hud = Object.fromEntries(['flames', 'carried', 'lanterns', 'time', 'score'].map(id => [id, byId(id)]));
 const abilities = ['dash', 'pulse', 'blink', 'beam'].map(name => [name, byId(`${name}_status`)]);
@@ -381,6 +415,8 @@ let activeDialog;
 let activeNight = false;
 let settingsFrom;
 let totalScore = 0;
+let nightsWon = 0;
+let listeningAction;
 let accumulator = 0;
 let pulseAt;
 let pulseCenter;
@@ -416,6 +452,55 @@ colorblind.addEventListener('change', () => {
   document.documentElement.classList.toggle('colorblind', colorblind.checked);
   applyColorblindColors();
   try { localStorage.setItem('dao-den-long.colorblind', String(colorblind.checked)); } catch {}
+});
+const reducedMotion = byId('reduced-motion');
+for (const [id, className] of [['reduced-motion', 'reduced-motion'], ['large-text', 'large-text']]) {
+  const input = byId(id);
+  try { input.checked = localStorage.getItem(`dao-den-long.${id}`) === 'true'; } catch {}
+  document.documentElement.classList.toggle(className, input.checked);
+  input.addEventListener('change', () => {
+    document.documentElement.classList.toggle(className, input.checked);
+    try { localStorage.setItem(`dao-den-long.${id}`, String(input.checked)); } catch {}
+  });
+}
+for (const button of document.querySelectorAll('[data-rebind]')) {
+  button.addEventListener('click', () => {
+    listeningAction = button.dataset.rebind;
+    label(byId('keybind-message'), `Nhấn phím mới cho “${button.parentElement.firstElementChild.textContent}”…`);
+    button.textContent = '…';
+  });
+}
+byId('reset-bindings').addEventListener('click', () => {
+  bindings = { ...defaultBindings };
+  listeningAction = null;
+  try { localStorage.removeItem('dao-den-long.bindings'); } catch {}
+  refreshBindings();
+  label(byId('keybind-message'), 'Phím đã được khôi phục mặc định.');
+});
+byId('settings').addEventListener('keydown', event => {
+  if (!listeningAction) return;
+  event.stopPropagation();
+  event.preventDefault();
+  if (event.code === 'Escape') {
+    listeningAction = null;
+    refreshBindings();
+    label(byId('keybind-message'), 'Đã hủy đổi phím.');
+    return;
+  }
+  if (!/^(Key[A-Z]|Digit[0-9]|Space|ShiftLeft|Enter)$/.test(event.code)) {
+    label(byId('keybind-message'), 'Phím này không dùng được.');
+    return;
+  }
+  const usedBy = Object.keys(bindings).find(action => bindings[action] === event.code && action !== listeningAction);
+  if (usedBy || ['KeyF', 'KeyR'].includes(event.code)) {
+    label(byId('keybind-message'), 'Phím này đã được gán. Hãy chọn phím khác.');
+    return;
+  }
+  bindings[listeningAction] = event.code;
+  try { localStorage.setItem('dao-den-long.bindings', JSON.stringify(bindings)); } catch {}
+  listeningAction = null;
+  refreshBindings();
+  label(byId('keybind-message'), 'Đã lưu phím mới.');
 });
 
 const notes = {
@@ -495,9 +580,34 @@ function resetNight(night) {
 function returnToMenu() {
   activeNight = false;
   totalScore = 0;
+  nightsWon = 0;
   resetNight(1);
   byId('hud').hidden = true;
   showDialog('menu');
+}
+function startBenchmark() {
+  let seed = Number(query.get('seed') ?? 42);
+  const gameSeed = seed;
+  const random = () => ((seed = (Math.imul(1664525, seed) + 1013904223) >>> 0) / 4294967296);
+  const shades = Array.from({ length: 200 }, (_, i) => {
+    const angle = random() * Math.PI * 2;
+    const radius = Math.sqrt(random()) * 39;
+    return { id: `S${i + 1}`, state: 'wander', pos: [Math.cos(angle) * radius, 1, Math.sin(angle) * radius] };
+  });
+  const motes = Array.from({ length: 100 }, () => {
+    const angle = random() * Math.PI * 2;
+    const radius = random() * 33;
+    return [Math.cos(angle) * radius, 0, Math.sin(angle) * radius];
+  });
+  game = createGame(gameSeed, { random_shades: false, random_drifters: false, random_motes: false,
+    player: { pos: [0, 0, 0] }, shades, motes,
+    lanterns: ['L1', 'L2', 'L3'].map(id => ({ id, lit: true, fuel: 100 })) }, 1);
+  game.benchmark = true;
+  updateRefuges(game);
+  buildNightMap();
+  byId('hud').hidden = true;
+  showDialog();
+  activeNight = true;
 }
 function showIntro(night) {
   activeNight = false;
@@ -525,14 +635,15 @@ function requestPause() {
 }
 const buttons = {
   play: () => showIntro(1), 'start-night': startNight,
+  'menu-leaderboard': showLeaderboard, 'leaderboard-back': () => showDialog('menu'),
   'intro-menu': returnToMenu, 'pause-menu': returnToMenu, 'result-menu': returnToMenu,
   'menu-settings': showSettings, 'pause-settings': showSettings,
-  'settings-back': () => showDialog(settingsFrom), resume: requestPause,
+  'settings-back': () => { listeningAction = null; refreshBindings(); showDialog(settingsFrom); }, resume: requestPause,
   'pause-restart': () => showIntro(game.night),
   'result-action': () => {
     if (game.state === 'lost') showIntro(game.night);
     else if (game.night < 3) showIntro(game.night + 1);
-    else returnToMenu();
+    else { totalScore = 0; nightsWon = 0; showIntro(1); }
   },
 };
 for (const [id, handler] of Object.entries(buttons)) {
@@ -544,8 +655,23 @@ for (const [id, handler] of Object.entries(buttons)) {
 for (const dialog of document.querySelectorAll('dialog')) {
   dialog.addEventListener('cancel', event => event.preventDefault());
 }
+byId('score-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = byId('save-score');
+  button.disabled = true;
+  try {
+    const response = await fetch('/api/leaderboard', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: byId('score-name').value, score: totalScore, nights_won: nightsWon, seed: 42 }) });
+    label(byId('score-message'), response.ok ? 'Đã lưu điểm vào bảng xếp hạng.' : 'Không lưu được điểm.');
+    button.disabled = response.ok;
+  } catch {
+    button.disabled = false;
+    label(byId('score-message'), 'Không kết nối được với máy chủ cục bộ.');
+  }
+});
 addEventListener('keydown', event => {
-  if (event.code === 'Escape' || event.code === 'KeyP') {
+  if (benchmarkMode) return;
+  if (event.code === 'Escape' || event.code === bindings.pause) {
     if (activeDialog?.id === 'settings' && event.code === 'Escape') {
       event.preventDefault();
       showDialog(settingsFrom);
@@ -575,7 +701,7 @@ addEventListener('blur', () => {
 function showResult(reason) {
   activeNight = false;
   const won = game.state === 'won';
-  if (won) totalScore += game.score;
+  if (won) { totalScore += game.score; nightsWon += 1; }
   playCue(won ? 'won' : 'lost');
   const dawn = won && game.night === 3;
   const explanations = {
@@ -590,7 +716,28 @@ function showResult(reason) {
     : `${explanations[reason]} ${game.score} điểm · ${game.player.flames} Ngọn Lửa.`);
   label(byId('result-action'), dawn ? 'Chơi lại từ Đêm 1' : won ? `Tiếp tục Đêm ${game.night + 1}` : 'Chơi lại Đêm');
   byId('result-menu').hidden = false;
+  byId('score-form').hidden = !(!won || dawn);
+  byId('score-name').value = '';
+  byId('score-message').textContent = '';
+  byId('save-score').disabled = false;
   showDialog('result');
+}
+
+async function showLeaderboard() {
+  const list = byId('leaderboard-list');
+  list.replaceChildren();
+  try {
+    const { entries } = await (await fetch('/api/leaderboard')).json();
+    for (const entry of entries) {
+      const item = document.createElement('li');
+      item.textContent = `${entry.name} — ${entry.score} điểm · ${entry.nights_won}/3 đêm`;
+      list.append(item);
+    }
+    if (!entries.length) list.textContent = 'Chưa có điểm được lưu.';
+  } catch {
+    list.textContent = 'Không đọc được bảng điểm. Hãy chạy game qua máy chủ cục bộ.';
+  }
+  showDialog('leaderboard');
 }
 
 function onEvent(event) {
@@ -615,6 +762,7 @@ function onEvent(event) {
       y + .55, z + Math.cos(angle) * tuning.beam_range_m]);
   }
   const messages = {
+    shade_spawned: '⚠ Bóng Mực xuất hiện!',
     mote_picked: '+1 đom đóm', deposit: `Đã nạp ${data.amount} ánh sáng`,
     lantern_lit: data.relight ? 'Đèn đã được thắp lại!' : 'Một ngọn đèn đã sáng!',
     refuel: `Đã châm dầu (${data.fuel}%)`, lantern_out: 'Một ngọn đèn đã tắt!',
@@ -637,12 +785,18 @@ function resize() {
 }
 resize();
 addEventListener('resize', resize);
-returnToMenu();
+if (benchmarkMode) startBenchmark();
+else returnToMenu();
 
 const aimPointer = new THREE.Vector2();
 function tickGame() {
-  const x = Number(held('KeyD', 'ArrowRight')) - Number(held('KeyA', 'ArrowLeft'));
-  const z = Number(held('KeyS', 'ArrowDown')) - Number(held('KeyW', 'ArrowUp'));
+  if (benchmarkMode) {
+    game.simTick += 1;
+    moveEnemies(game);
+    return;
+  }
+  const x = Number(held(bindings.right, 'ArrowRight')) - Number(held(bindings.left, 'ArrowLeft'));
+  const z = Number(held(bindings.down, 'ArrowDown')) - Number(held(bindings.up, 'ArrowUp'));
   const blink = taps.has('KeyF');
   const beam = taps.has('KeyR');
   let target;
@@ -658,8 +812,8 @@ function tickGame() {
   const before = game.simTick;
   pauseRequested = false;
   stepGame(game, { move: [x, z], cam_yaw_deg: 0, aim_deg: may.rotation.y * 180 / Math.PI,
-    blink, beam, dash: taps.has('ShiftLeft') || taps.has('ShiftRight'), pause,
-    jump: taps.has('Space'), pulse: taps.has('KeyQ'), interact: taps.has('KeyE') }, onEvent, target);
+    blink, beam, dash: taps.has(bindings.dash) || taps.has('ShiftRight'), pause,
+    jump: taps.has(bindings.jump), pulse: taps.has(bindings.pulse), interact: taps.has(bindings.interact) }, onEvent, target);
   taps.clear();
   if (game.simTick === before) return;
   const stride = x || z ? Math.sin(game.simTick * .22) * .14 : 0;
@@ -726,17 +880,41 @@ function markNearestLantern(x, y, z) {
   label(arrow.lastElementChild, nearest.id);
 }
 
+function markNearestShade(x, y, z) {
+  const marker = byId('shade-arrow');
+  const shade = [...game.shades]
+    .sort((a, b) => Math.hypot(a.pos[0] - x, a.pos[2] - z) - Math.hypot(b.pos[0] - x, b.pos[2] - z))[0];
+  marker.hidden = true;
+  if (!shade) return;
+  screenPoint.set(shade.pos[0], shade.pos[1] + 1.5, shade.pos[2]).project(camera);
+  const sign = screenPoint.z > 1 ? -1 : 1;
+  const dx = sign * screenPoint.x * innerWidth;
+  const dy = -sign * screenPoint.y * innerHeight;
+  const edge = Math.max(Math.abs(dx) / (innerWidth / 2 - 75), Math.abs(dy) / (innerHeight / 2 - 75)) || 1;
+  marker.hidden = false;
+  marker.firstElementChild.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+  marker.style.left = `${innerWidth / 2 + dx / edge}px`;
+  marker.style.top = `${innerHeight / 2 + dy / edge}px`;
+}
+
 function drawHud(lit, x, y, z) {
   const { player, lanterns, simTick } = game;
   hud.flames.setAttribute('aria-label', `${player.flames}/${tuning.flames}`);
   flames.forEach((flame, i) => flame.classList.toggle('spent', i >= player.flames));
   slots.forEach((slot, i) => slot.classList.toggle('filled', i < player.carried));
-  label(hud.carried, `${player.carried}/${player.capacity}`);
+  label(hud.carried, `${player.carried}/${Math.min(tuning.capacity_max, tuning.carry_capacity + 2 * player.successfulLights)}`);
   label(hud.lanterns, `${lit}/${lanterns.length}`);
   const seconds = Math.max(0, Math.ceil(game.timeLeft));
   label(hud.time, `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`);
   hud.time.parentElement.classList.toggle('danger', seconds <= 30);
+  const countdown = byId('countdown-warning');
+  countdown.hidden = seconds > 10;
+  if (!countdown.hidden) label(countdown, `⚠ Còn ${seconds} giây`);
   label(hud.score, game.score);
+  const lowLamps = lanterns.filter(lamp => lamp.lit && lamp.fuelUnits < tuning.low_fuel_threshold * HZ);
+  const fuelAlert = byId('fuel-alert');
+  fuelAlert.hidden = !lowLamps.length;
+  if (!fuelAlert.hidden) label(fuelAlert, `⚠ Đèn ${lowLamps.map(lamp => lamp.id).join(', ')} đang cạn dầu`);
   const charm = Math.max(0, (player.charmUntil ?? game.charmUntil ?? 0) - simTick);
   const charmStatus = byId('charm-status');
   charmStatus.hidden = !charm;
@@ -754,8 +932,8 @@ function drawHud(lit, x, y, z) {
   deposit.hidden = !lamp;
   if (lamp) {
     const cost = lamp.everLit ? tuning.relight_cost : tuning.lantern_cost;
-    label(deposit.querySelector('span'), lamp.lit ? 'E — Châm dầu' :
-      `E — ${lamp.everLit ? 'Thắp lại' : 'Nạp ánh sáng'} (${lamp.deposited}/${cost})`);
+    label(deposit.querySelector('span'), lamp.lit ? `${bindingLabel(bindings.interact)} — Châm dầu` :
+      `${bindingLabel(bindings.interact)} — ${lamp.everLit ? 'Thắp lại' : 'Nạp ánh sáng'} (${lamp.deposited}/${cost})`);
     const fuel = byId('lamp-fuel');
     fuel.hidden = !lamp.lit;
     fuel.value = lamp.fuelUnits / HZ;
@@ -763,8 +941,13 @@ function drawHud(lit, x, y, z) {
   }
   hint.hidden = simTick >= messageUntil;
   markNearestLantern(x, y, z);
+  markNearestShade(x, y, z);
 }
 let previousTime = performance.now();
+let benchmarkStart;
+let previousBenchFrame;
+const benchmarkFrames = [];
+if (benchmarkMode) window.__benchResult = null;
 renderer.setAnimationLoop(now => {
   if (activeNight) {
     accumulator += Math.max(0, Math.min(.1, (now - previousTime) / 1000));
@@ -779,11 +962,18 @@ renderer.setAnimationLoop(now => {
   const simTick = game.simTick;
   const overview = activeDialog?.id === 'menu' || (activeDialog?.id === 'settings' && settingsFrom === 'menu');
   may.position.set(x, y, z);
-  may.visible = !(respawnAt > simTick) && (simTick >= invulnerableUntil || simTick % 10 < 7);
+  may.visible = !(respawnAt > simTick) && (reducedMotion.checked || simTick >= invulnerableUntil || simTick % 10 < 7);
   const cameraY = Math.max(-1.5, y);
-  camera.position.set(x, 23 + cameraY, z + 23);
-  camera.lookAt(x, cameraY + .55, z - 5);
-  if (overview) {
+  if (benchmarkMode) {
+    benchmarkStart ??= now;
+    const angle = (now - benchmarkStart) / 15000 * Math.PI * 2;
+    camera.position.set(30 * Math.cos(angle), 15, -30 * Math.sin(angle));
+    camera.lookAt(0, 0, 0);
+  } else {
+    camera.position.set(x, 23 + cameraY, z + 23);
+    camera.lookAt(x, cameraY + .55, z - 5);
+  }
+  if (overview && !benchmarkMode) {
     camera.position.set(-3, 39, 47);
     camera.lookAt(0, -4, -5);
   }
@@ -801,7 +991,8 @@ renderer.setAnimationLoop(now => {
   ambient.color.set(0xc5d6ff).lerp(warmGlow, progress * .38);
   for (const lamp of game.lanterns) {
     const visual = lamps.get(lamp.id);
-    const lowFuelBlink = lamp.lit && lamp.fuelUnits < tuning.low_fuel_threshold * HZ && Math.floor(simTick / (HZ / 2)) % 2 === 1;
+    const lowFuelBlink = !reducedMotion.checked && lamp.lit && lamp.fuelUnits < tuning.low_fuel_threshold * HZ &&
+      Math.floor(simTick / (HZ / 2)) % 2 === 1;
     const safe = lamp.lit && lamp.fuelUnits >= tuning.low_fuel_threshold * HZ;
     visual.object.scale.setScalar(lamp.lit ? 1 : .8);
     visual.ring.scale.setScalar(lamp.lit ? 1 : 1.25);
@@ -815,7 +1006,7 @@ renderer.setAnimationLoop(now => {
   }
   markPosition(mapPlayer, x, z);
   const pulseProgress = (simTick - pulseAt) / 24;
-  pulseRing.visible = pulseProgress < 1 && pulseCenter !== null;
+  pulseRing.visible = !reducedMotion.checked && pulseProgress < 1 && pulseCenter !== null;
   if (pulseRing.visible) {
     pulseRing.position.set(...pulseCenter);
     pulseRing.scale.setScalar(Math.max(.05, pulseProgress * tuning.pulse_radius));
@@ -823,7 +1014,7 @@ renderer.setAnimationLoop(now => {
   }
   for (const trail of Object.values(trails)) {
     const left = trail.userData.expires - simTick;
-    trail.visible = left > 0;
+    trail.visible = !reducedMotion.checked && left > 0;
     trail.children[0].material.opacity = left / 28;
   }
   const motion = simTick / HZ;
@@ -850,4 +1041,23 @@ renderer.setAnimationLoop(now => {
   drawWind();
   if (!byId('hud').hidden) drawHud(lit, x, y, z);
   renderer.render(scene, camera);
+  if (benchmarkMode) {
+    const elapsed = now - benchmarkStart;
+    if (previousBenchFrame !== undefined && elapsed >= 3000 && elapsed <= 3000 + benchmarkDuration * 1000) {
+      benchmarkFrames.push(now - previousBenchFrame);
+    }
+    previousBenchFrame = now;
+    if (elapsed >= 3000 + benchmarkDuration * 1000) {
+      activeNight = false;
+      renderer.setAnimationLoop(null);
+      const result = summarizeFrames(benchmarkFrames);
+      window.__benchResult = result;
+      fetch('/api/bench-result', { method: 'POST', headers: { 'Content-Type': 'application/json',
+        'X-Bench-Token': query.get('token') },
+      body: JSON.stringify({ contract_version: contract.contract_version, ...result,
+        load_ms: Math.round(performance.timeOrigin + benchmarkStart - Number(query.get('started'))),
+        peak_mem_mb: null, vsync_off: false, renderer: `Three.js r${THREE.REVISION} WebGLRenderer`, os: navigator.userAgent }) });
+    }
+    window.__benchReady = true;
+  }
 });

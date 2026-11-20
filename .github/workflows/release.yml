@@ -1,0 +1,28 @@
+name: Bản phát hành v1.0.0
+on:
+  push:
+    tags: [phase-4]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm test
+      - name: Đóng gói bản web chạy cục bộ
+        run: |
+          mkdir -p dao-den-long/node_modules/three/build
+          cp index.html style.css view.js game.js enemies.js maps.js movement.js bench-metrics.js leaderboard.js server.js game.contract.json package.json LICENSE CREDITS.md docs/release.md dao-den-long/
+          cp node_modules/three/LICENSE dao-den-long/node_modules/three/
+          cp node_modules/three/build/three.module.js node_modules/three/build/three.core.js dao-den-long/node_modules/three/build/
+          zip -qr dao-den-long-v1.0.0.zip dao-den-long
+      - name: Tạo GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v1.0.0 dao-den-long-v1.0.0.zip --target "$GITHUB_SHA" --title 'Đảo Đèn Lồng v1.0.0' --notes-file docs/release.md

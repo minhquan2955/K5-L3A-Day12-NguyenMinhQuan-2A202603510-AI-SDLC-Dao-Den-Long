@@ -1,5 +1,9 @@
 # Day 12 — AI SDLC: Đảo Đèn Lồng
 
+Game 3D góc nhìn thứ ba. Gom đom đóm, né Bóng Mực và giữ đèn sáng qua ba đêm.
+
+![Đảo Đèn Lồng, ảnh gameplay Phase 2](docs/proof/v1.1-hud.png)
+
 ## Chơi Ba hòn đảo
 
 Cần Node.js 20.18.3 trở lên và trình duyệt máy tính hỗ trợ WebGL 2.
@@ -9,7 +13,7 @@ npm ci
 npm start
 ```
 
-Mở http://127.0.0.1:3000, chọn **Bắt đầu** rồi **Vào Đêm**. Giữ ít nhất 60% đèn sáng đến bình minh để lần lượt qua **Đảo Bến**, **Đảo Cau** và **Đảo Chuông**. Thắng Đêm 3 sẽ mở màn **Bình Minh** và hiện tổng điểm. Có thể thử lại Đêm đang chơi. Âm lượng, độ nhạy chuột và bảng màu dễ phân biệt được lưu trong trình duyệt.
+Mở http://127.0.0.1:3000, chọn **Bắt đầu** rồi **Vào Đêm**. Giữ ít nhất 60% đèn sáng đến bình minh để lần lượt qua **Đảo Bến**, **Đảo Cau** và **Đảo Chuông**. Thắng Đêm 3 sẽ mở màn **Bình Minh** và hiện tổng điểm. Có thể thử lại Đêm đang chơi. Âm lượng, độ nhạy chuột, bảng màu, phím và cài đặt trợ năng được lưu cục bộ.
 
 | Phím | Thao tác |
 | --- | --- |
@@ -31,13 +35,20 @@ Có 5, 6 và 7 đèn ở ba Đêm, với thời lượng tương ứng 4:00, 4:3
 ```sh
 npm test
 node headless.js --seed 42 --night 3 --ticks 600 --out out.jsonl
+node soak.js --seed 7 --nights 10 --out soak.json
+node bench.js --seed 42 --duration 30 --out bench.json
+node server.js --export-leaderboard docs/proof/leaderboard.json
 ```
+
+Benchmark mở Chrome hoặc Edge thành cửa sổ 1280×720. Có thể đặt `CHROME_BIN` nếu trình duyệt cài ở vị trí khác. Web không đọc được RSS toàn bộ tiến trình trình duyệt nên `peak_mem_mb` là `null`. Lệnh gửi cờ tắt VSync cho Chromium. Do WebGL không xác nhận được cờ có được trình điều khiển áp dụng hay không, báo cáo dùng `vsync_off: false`.
+
+Sau khi thua hoặc thắng Đêm 3, nhập tên để lưu tổng điểm các đêm đã thắng. Mở bảng xếp hạng từ menu chính. Máy chủ cục bộ lưu dữ liệu vào `leaderboard.json`. Trong Cài đặt, bấm phím hiện tại rồi nhấn phím mới để đổi. Có thể khôi phục mặc định, bật chữ lớn hoặc giảm chuyển động.
 
 CLI hỗ trợ `--night 1|2|3`, `--scenario`, `--inputs` và `--snapshot-every` theo [Test Contract v1.2](PRD-2-Phase-3-Den-can-dau.md). Các input mở rộng `blink` và `beam` dùng `aim_deg` (0° là +Z và 90° là +X). Khi chuột chưa ngắm vào đảo, bản web dùng hướng nhìn của Mây.
 
 HUD ưu tiên Be Vietnam Pro và JetBrains Mono nếu máy có sẵn. Game dùng font dự phòng trên máy để chạy offline. Bảng màu giao diện lấy từ PRD-1. Cây, đá và mô hình 3D dùng thêm màu vật liệu để phân biệt địa hình.
 
-Xem [kiểm chứng và changelog Phase 3](docs/proof/phase-3.md), [kiểm chứng Phase 2](docs/proof/phase-2.md), [bằng chứng Phase 1](docs/proof/phase-1.md) và [harness cho agent](AGENTS.md).
+Xem [kiểm chứng Phase 4](docs/proof/phase-4.md), [retro](docs/retro.md), [kiểm chứng và changelog Phase 3](docs/proof/phase-3.md), [kiểm chứng Phase 2](docs/proof/phase-2.md), [bằng chứng Phase 1](docs/proof/phase-1.md) và [harness cho agent](AGENTS.md).
 
 ### Sáng tạo của tôi
 
