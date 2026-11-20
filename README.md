@@ -1,5 +1,35 @@
 # Day 12 — AI SDLC: Đảo Đèn Lồng
 
+## Chơi Đêm 1 – Đảo Bến
+
+Cần Node.js 20.18.3 trở lên và trình duyệt máy tính hỗ trợ WebGL 2.
+
+```sh
+npm ci
+npm start
+```
+
+Mở http://127.0.0.1:3000. Nhấn phím điều khiển để bắt đầu đếm giờ. Dùng **WASD** hoặc **phím mũi tên** để di chuyển, **Space** để nhảy, **E** để nạp đom đóm vào đèn gần nhất và **Q** để tỏa sáng. Đi qua đom đóm để nhặt. Bản đồ ở góc trên bên phải đánh dấu đèn và vị trí của Mây.
+
+Mây có 3 sinh lực, mang tối đa 8 đom đóm, và cần nạp 4 đom đóm cho mỗi đèn. Tỏa sáng tốn 2 đom đóm, đẩy lùi và làm choáng Bóng Mực. Đứng gần đèn đã thắp sẽ tránh được Bóng Mực. Thắp hết 5 đèn để thắng. Hết sinh lực hoặc hết 150 giây thì thua. Dùng nút **Chơi lại** sau khi kết thúc.
+
+Mỗi lần nhặt được 10 điểm, mỗi đèn thắp được 100 điểm và mỗi Bóng Mực trúng tỏa sáng được 20 điểm. Khi thắng, cộng 2 điểm cho mỗi giây nguyên còn lại và 50 điểm cho mỗi sinh lực còn lại.
+
+## Kiểm chứng Phase 1
+
+```sh
+npm test
+node headless.js --seed 42 --night 1 --ticks 600 --out out.jsonl
+```
+
+CLI hỗ trợ `--scenario`, `--inputs` và `--snapshot-every` theo [PRD-0](PRD-0_Dao_Den_Long.md). Xem [ghi chép kiểm chứng](docs/proof/phase-1.md) và [harness cho agent](AGENTS.md).
+
+### Sáng tạo của tôi
+
+Bản đồ nhỏ đổi màu theo đèn đã thắp, giúp định hướng khi Mây chạy quanh đảo. Bản đồ đọc trạng thái có sẵn từ mô phỏng. Các bài kiểm tra headless chạy cùng mô phỏng mà không cần Three.js hay trình duyệt.
+
+---
+
 > **Cá nhân** (1 người / 1 MSSV) · Áp dụng SDLC cùng AI để xây một **game 3D** qua **4 phase**, từ yêu cầu ban đầu tới bản phát hành.
 > **Lab board + trợ giảng:** **[Đảo Đèn Lồng Lab](https://claude.ai/artifact/Q1RYyv1dxjUczzCbd2ZnoW)**
 

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Đảo Đèn Lồng</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/style.css">
+    <script type="importmap">{"imports":{"three":"/vendor/three.module.js"}}</script>
+  </head>
+  <body>
+    <canvas id="world" aria-label="Đảo Bến trong đêm"></canvas>
+    <header class="brand">
+      <p class="eyebrow">Đêm 1 <span>·</span> Đảo Bến</p>
+      <h1>Đảo Đèn Lồng</h1>
+      <p class="goal">Gom đom đóm, thắp sáng năm ngọn đèn.</p>
+    </header>
+    <section class="stats" aria-label="Trạng thái của Mây">
+      <div><span>Sinh lực</span><strong id="flames"></strong></div>
+      <div><span>Đom đóm</span><strong id="carried"></strong></div>
+      <div><span>Đèn đã thắp</span><strong id="lanterns"></strong></div>
+      <div><span>Còn lại</span><strong id="time"></strong></div>
+      <div><span>Điểm</span><strong id="score"></strong></div>
+    </section>
+    <aside class="map" aria-label="Bản đồ đèn lồng">
+      <p class="eyebrow">Bản đồ đảo</p>
+      <div class="map-disc" id="map"></div>
+      <p class="map-key">◆ Đèn <span>• Mây</span></p>
+    </aside>
+    <div class="bottom">
+      <p id="hint">Nhấn phím di chuyển để bắt đầu</p>
+      <div class="controls" aria-label="Điều khiển">
+        <span><kbd>W A S D</kbd> Di chuyển</span>
+        <span><kbd>Space</kbd> Nhảy</span>
+        <span><kbd>E</kbd> Nạp đèn</span>
+        <span><kbd>Q</kbd> Tỏa sáng</span>
+      </div>
+    </div>
+    <dialog id="result">
+      <p class="eyebrow">Đêm 1 · Đảo Bến</p>
+      <h2 id="result-title"></h2>
+      <p id="result-detail"></p>
+      <button id="restart">Chơi lại</button>
+    </dialog>
+    <script type="module" src="/view.js"></script>
+  </body>
+</html>
