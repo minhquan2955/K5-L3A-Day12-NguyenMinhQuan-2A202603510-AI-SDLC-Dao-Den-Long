@@ -2,6 +2,8 @@
 
 Game 3D góc nhìn thứ ba. Gom đom đóm, né Bóng Mực và giữ đèn sáng qua ba đêm.
 
+[Xem video demo Đảo Đèn Lồng trên Google Drive](https://drive.google.com/drive/folders/1bshLpEUgDEZRHLRmZWVYeoOf1sxc1hUS?usp=sharing)
+
 ![Đảo Đèn Lồng, ảnh gameplay Phase 2](docs/proof/v1.1-hud.png)
 
 ## Chơi Ba hòn đảo
